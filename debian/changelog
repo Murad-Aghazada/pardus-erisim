@@ -1,0 +1,10 @@
+pardus-erisim (1.0.0) unstable; urgency=medium
+
+  * İlk sürüm.
+  * Göz izleme: MediaPipe FaceLandmarker, 9 nokta kalibrasyon,
+    One Euro filtresi, bekleyerek/kırparak tıklama.
+  * Türkçe sesli komut: Vosk (çevrimdışı), bulanık eşleştirme,
+    Gemini niyet çözümleme katmanı.
+  * Asistan: Gemini sohbet + sesli okuma (TTS).
+
+ -- Pardus Erişim Takımı <signafinnovators@gmail.com>  Thu, 23 Jul 2026 12:00:00 +0300

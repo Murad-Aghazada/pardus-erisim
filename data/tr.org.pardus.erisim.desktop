@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Pardus Erişim
+Name[tr]=Pardus Erişim
+GenericName=Accessibility Suite
+GenericName[tr]=Erişilebilirlik Paketi
+Comment=Control the computer with your eyes and Turkish voice commands
+Comment[tr]=Bilgisayarı gözlerinle ve Türkçe sesli komutlarla kullan
+Exec=pardus-erisim
+Icon=tr.org.pardus.erisim
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=accessibility;eye;gaze;voice;speech;erişilebilirlik;göz;ses;
+StartupNotify=true

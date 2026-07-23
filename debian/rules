@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+export PYBUILD_NAME=pardus-erisim
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	mkdir -p debian/pardus-erisim/usr/share/pardus/pardus-erisim
+	cp -r app assets main.py requirements.txt debian/pardus-erisim/usr/share/pardus/pardus-erisim/
+	mkdir -p debian/pardus-erisim/usr/bin
+	install -m 0755 pardus-erisim debian/pardus-erisim/usr/bin/pardus-erisim
+	mkdir -p debian/pardus-erisim/usr/share/applications
+	install -m 0644 data/tr.org.pardus.erisim.desktop debian/pardus-erisim/usr/share/applications/
+	mkdir -p debian/pardus-erisim/usr/share/icons/hicolor/256x256/apps
+	install -m 0644 assets/icon.png debian/pardus-erisim/usr/share/icons/hicolor/256x256/apps/tr.org.pardus.erisim.png
+
+override_dh_auto_test:
+	# GUI/donanım testleri paket derlemesinde çalıştırılmaz

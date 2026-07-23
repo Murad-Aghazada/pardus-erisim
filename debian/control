@@ -1,0 +1,28 @@
+Source: pardus-erisim
+Section: utils
+Priority: optional
+Maintainer: Pardus Erişim Takımı <signafinnovators@gmail.com>
+Build-Depends: debhelper-compat (= 13), dh-python, python3-all
+Standards-Version: 4.6.2
+Homepage: https://github.com/pardus
+
+Package: pardus-erisim
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends},
+ python3-pyside6.qtwidgets | python3-pyside2.qtwidgets,
+ python3-numpy,
+ python3-opencv,
+ python3-pip,
+ libxcb-cursor0,
+ libportaudio2
+Recommends: speech-dispatcher, tesseract-ocr, tesseract-ocr-tur
+Description: Head tracking and Turkish voice control accessibility suite
+ Pardus Erişim lets users control the computer without mouse or
+ keyboard: a webcam tracks head pose and maps it to the cursor
+ (dwell or a half-second eye-close to click, with corner magnetism),
+ and Turkish voice commands are resolved offline (Whisper, with a
+ lightweight Vosk fallback). Automatic read-aloud speaks on-screen
+ text under the pointer, and an optional Gemini-backed assistant
+ answers questions and turns free speech into multi-step actions.
+ .
+ Developed for the TEKNOFEST Pardus operating system category.

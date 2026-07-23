@@ -1,0 +1,16 @@
+#!/bin/sh
+# Pardus Erişim başlatıcısı.
+# Sanal ortam (.venv) varsa onun python'ını, yoksa sistem python3'ünü kullanır.
+if [ -d /usr/share/pardus/pardus-erisim ]; then
+    APP=/usr/share/pardus/pardus-erisim
+else
+    APP="$(dirname "$(readlink -f "$0")")"
+fi
+
+if [ -x "$APP/.venv/bin/python" ]; then
+    PY="$APP/.venv/bin/python"
+else
+    PY=python3
+fi
+
+exec "$PY" "$APP/main.py" "$@"

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Vosk Türkçe model (ayrıca indirilir, repoya konmaz)
+models/
+
+# Yerel gizli yapılandırma (API anahtarı)
+config.json
+
+# Uygulama ayarları / kalibrasyon (yerel)
+*.log
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db
+
+# Editör
+.vscode/
+.idea/

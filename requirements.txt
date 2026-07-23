@@ -1,0 +1,33 @@
+# Pardus Erişim — bağımlılıklar
+# Çekirdek arayüz (zorunlu)
+PySide6>=6.6
+numpy>=1.24
+
+# Göz izleme (kamera + iris)
+opencv-python>=4.8
+mediapipe>=0.10
+
+# Sistem denetimi (imleç, klavye, uygulama başlatma)
+pynput>=1.7
+
+# Türkçe sesli komut — yüksek doğruluk (çevrimdışı, önerilen)
+faster-whisper>=1.0
+sounddevice>=0.4.6
+
+# Türkçe sesli komut — hafif yedek motor (çevrimdışı)
+vosk>=0.3.45
+
+# Asistan (Gemini) ve model indirme
+requests>=2.31
+
+# Notlar:
+# 1) Whisper motoru ilk kullanımda 'small' modelini indirir (~460 MB).
+#    Alternatif/yedek Vosk modeli: https://alphacephei.com/vosk/models
+#    → vosk-model-small-tr-* → proje kökündeki models/ içine çıkarın.
+#    (install-pardus.sh her ikisini de sizin için hazırlar.)
+# 2) face_landmarker.task (MediaPipe) ilk çalıştırmada otomatik indirilir.
+# 3) Gemini API anahtarı config.json'a yazılır (Ayarlar ekranından da girilebilir).
+# 4) LINUX/PARDUS SİSTEM KİTAPLIKLARI (pip kuramaz — 'açılmıyor' sorununun nedeni):
+#    sudo apt install -y libxcb-cursor0 libxkbcommon-x11-0 libgl1 libegl1 \
+#                        libportaudio2 speech-dispatcher
+#    ya da tek adımda:  sh install-pardus.sh   ·  teşhis:  python3 main.py --doctor
