@@ -48,13 +48,19 @@ class UInputMouse:
             # libinput bunu AYRI bir dokunma yüzeyi olarak izler, normal
             # imleç yönlendirmesinden kopuk kendi imlecini çizer (iki fare
             # görünmesinin nedeni buydu).
+            # Konum aygıtı düğmeleri de TANITIR (ama onlara hiç yazmayız):
+            # libinput bir aygıtı ancak düğme yeteneği varsa "pointer" olarak
+            # sınıflar; yalnız ABS eksenli bir aygıt imleci HİÇ hareket
+            # ettirmiyor. Düğme olayları yine ayrı aygıttan gider.
             self._dev = UInput(
-                {e.EV_ABS: [
+                {e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE],
+                 e.EV_ABS: [
                     (e.ABS_X, AbsInfo(value=0, min=0, max=self.screen_w,
                                       fuzz=0, flat=0, resolution=0)),
                     (e.ABS_Y, AbsInfo(value=0, min=0, max=self.screen_h,
                                       fuzz=0, flat=0, resolution=0)),
-                ]},
+                 ],
+                 e.EV_REL: [e.REL_WHEEL]},
                 name="pardus-erisim-sanal-fare")
             self._btn = UInput(
                 {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL],
