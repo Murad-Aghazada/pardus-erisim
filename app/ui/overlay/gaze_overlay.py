@@ -23,8 +23,14 @@ class GazeOverlay(QWidget):
 
     def __init__(self, screen_geo, parent=None):
         super().__init__(parent)
+        # Qt.WindowTransparentForInput ŞART: WA_TransparentForMouseEvents
+        # yalnız WIDGET düzeyinde çalışır, üst düzey pencerenin giriş
+        # bölgesini boşaltmaz. O bayrak olmadan bu tam ekran katman
+        # Wayland'da EKRANDAKİ TÜM TIKLAMALARI yutuyordu (görünmez olduğu
+        # için sebebi anlaşılmıyordu: "düğmeler tepki vermiyor").
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+            | Qt.WindowTransparentForInput
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)  # tıklamayı geçir

@@ -74,7 +74,6 @@ class _GestureSlot:
     }
     BROW_DELTA_IN = 0.24
     BROW_DELTA_OUT = 0.12
-    BROW_DELTA_FREEZE = 0.10
     # wink_*: sol-sağ göz kapama FARKI kişiden kişiye dinlenme halinde bile
     # sıfır değildir (kamera açısı, yüz asimetrisi) — bu yüzden brow gibi
     # UYARLANABİLİR TABAN kullanılır; taban çıkarılmadan sabit bir eşik
@@ -82,7 +81,6 @@ class _GestureSlot:
     # sürekli aşar).
     WINK_DELTA_IN = 0.22
     WINK_DELTA_OUT = 0.11
-    WINK_DELTA_FREEZE = 0.09
     # Taban, TEK gürültülü kareden değil ilk birkaç karenin MEDYANINDAN
     # kurulur (bkz. _adaptive) — kamera açısı/ışık yüzünden o an rastgele
     # yüksek gelen bir kare tabanı yanlış yere çivilememesi için.
@@ -94,11 +92,6 @@ class _GestureSlot:
     # Başarısız bir denemeden sonra kullanıcı hemen yeniden dener; uzun bir
     # bekleme bu denemeyi sessizce yutup "algılamadı" hissi veriyordu.
     REFRACTORY = 0.55        # iki tıklama arası en az süre
-    # Erken dondurma: jest sinyali yükselmeye BAŞLAR başlamaz imleç sabitlenir
-    # (jest mimiği yüzü oynatır; imlecin hedeften kaymaması için)
-    FREEZE_THR = {"long_blink": 0.30, "mouth": 0.28, "smile": 0.28}
-    FREEZE_DELTA = {"brow": BROW_DELTA_FREEZE, "wink_left": WINK_DELTA_FREEZE,
-                    "wink_right": WINK_DELTA_FREEZE}
 
     def __init__(self, gesture: str = "off"):
         self.gesture = gesture if gesture in GESTURES else "off"
@@ -195,11 +188,6 @@ class _GestureSlot:
         k = self._scale
         thr_in *= k
         thr_out *= k
-        if self.gesture in self.FREEZE_DELTA:
-            # v zaten taban çıkarılmış (bkz. _adaptive) — doğrudan karşılaştır
-            freeze = v > self.FREEZE_DELTA[self.gesture] * k
-        else:
-            freeze = v > self.FREEZE_THR.get(self.gesture, 0.30) * k
 
         if self._active_t is None:
             if v >= thr_in and (t - self._last_click) >= self.REFRACTORY:
@@ -213,8 +201,15 @@ class _GestureSlot:
             elif not self._fired and (t - self._active_t) >= hold:
                 self._fired = True
                 self._last_click = t
-                return True, freeze
-        return False, freeze
+                return True, True
+
+        # İmleç YALNIZ jest gerçekten başladığında (giriş eşiği aşıldığında)
+        # donar. Eskiden çok daha düşük bir "erken dondurma" eşiği vardı; kaş
+        # oynatma/konuşma gibi sıradan mimikler eşiği geçip imleci sürekli
+        # durduruyordu ("takılıyor, akıcı değil"). Kafa pozu mimiklerden
+        # etkilenmeyen yanak çerçevesinden ölçüldüğü için erken dondurmaya
+        # gerek yok (bkz. landmark_engine._pose_geometric).
+        return False, self._active_t is not None
 
 
 class GestureClick:

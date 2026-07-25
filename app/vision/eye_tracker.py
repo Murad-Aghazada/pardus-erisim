@@ -35,6 +35,9 @@ class EyeTracker(QThread):
     # yaptığında NİŞAN ALMADAN ÖNCEKİ konuma tıklar (0.35 sn buydu: jest
     # algılanıyor, halka görünüyor, ama tıklama boş alana düşüyordu).
     REWIND_S = 0.12
+    # Dondurma bu süreden uzun süremez — imlecin kalıcı takılmasına karşı
+    # son savunma (jest eşiğin kıyısında salınıp ne ateşlenip ne düşerse).
+    FREEZE_MAX_S = 1.0
 
     def __init__(self, screen_w: int, screen_h: int, parent=None):
         super().__init__(parent)
@@ -57,6 +60,7 @@ class EyeTracker(QThread):
         from collections import deque
         self._history: deque = deque(maxlen=64)
         self._frozen = False
+        self._froze_at = 0.0
         self._latched: tuple[float, float] | None = None
 
     def _pos_before(self, t: float) -> tuple[float, float] | None:
@@ -166,10 +170,18 @@ class EyeTracker(QThread):
                         pt = self.mapper.map(rx, ry, yaw, pitch)
 
                     if pt is not None:
+                        # Güvenlik ağı: dondurma hiçbir koşulda takılıp
+                        # kalmamalı. Sinyal eşiğin hemen üstünde salınırsa
+                        # jest ne ateşlenir ne düşer; imleç sonsuza dek
+                        # donabilirdi ("takılıyor" hatası).
+                        if freeze and self._frozen and \
+                                (now - self._froze_at) > self.FREEZE_MAX_S:
+                            freeze = False
                         if freeze:
                             if not self._frozen:
                                 # jest başladı: nişan noktası, jest ÖNCESİNİN konumu
                                 self._frozen = True
+                                self._froze_at = now
                                 self._latched = self._pos_before(now - self.REWIND_S)
                         else:
                             self._frozen = False

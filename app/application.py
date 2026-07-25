@@ -13,7 +13,6 @@ Ses komut hattı iki katmanlıdır:
 from __future__ import annotations
 
 import importlib.util
-import math
 import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -37,11 +36,6 @@ class AppController(QObject):
     # Odaktan bağımsız acil-durdur: pencere odakta olmasa da her zaman çalışır
     panic_stop = Signal()
 
-    # Elle fare hareketi algılama: göz/kafa imleci gerçek imleçle "boğuşmasın"
-    MANUAL_OVERRIDE_PX = 40        # bu kadar sapma = kullanıcı fareyi elle tuttu
-    # Doğal "konumla, DUR, tıkla" akışı 1-2 sn sürebilir; kısa bir bekleme
-    # süresi tam tıklama anında dolup imleci geri kapabilirdi.
-    MANUAL_OVERRIDE_COOLDOWN_S = 2.5
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -76,14 +70,9 @@ class AppController(QObject):
         self.overlay = None
         self.recognizer = None
 
-        # elle fare hareketi algılama durumu (_on_gaze içinde kullanılır)
         self._last_cmd_pos: tuple[float, float] | None = None
+        # Yalnız tıklama yerleşme penceresi için (bkz. CLICK_SETTLE_MS).
         self._manual_override_until: float = 0.0
-        self._real_mouse = None
-        if self.control.using_uinput:
-            from app.control.real_mouse_watch import RealMouseWatcher
-            self._real_mouse = RealMouseWatcher()
-            self._real_mouse.start()
 
         self.panic_stop.connect(self.stop_all)
         self._panic_listener = None
@@ -240,27 +229,14 @@ class AppController(QObject):
         if self.overlay:
             self.overlay.set_gaze(x, y)
 
-        now = time.monotonic()
-        if now < self._manual_override_until:
-            return  # kullanıcı fareyi elle tutuyor: kısa süre karışma
+        # Yalnız tıklama yerleşme penceresinde duraklarız (bkz. CLICK_SETTLE_MS).
+        # Fiziksel fare hareketi ARTIK kafa kontrolünü DURDURMAZ: erişilebilirlik
+        # aracının, yüz göründüğü sürece çalışmayı bırakmaması gerekir —
+        # duraklatma "fareye dokundum, kontrol öldü" hissi veriyordu.
+        if time.monotonic() < self._manual_override_until:
+            return
 
         target = (self._origin_x + x * self._dpr, self._origin_y + y * self._dpr)
-        if self._real_mouse is not None:
-            # uinput yolu: gerçek imleç konumu okunamaz (Wayland), bu yüzden
-            # GERÇEK fare aygıtındaki ham hareketi doğrudan izleriz.
-            if self._real_mouse.last_motion_age() < self.MANUAL_OVERRIDE_COOLDOWN_S:
-                self._manual_override_until = now + self.MANUAL_OVERRIDE_COOLDOWN_S
-                return
-        elif self._last_cmd_pos is not None and self.control.available:
-            cx, cy = self.control.position()
-            lx, ly = self._last_cmd_pos
-            if math.hypot(cx - lx, cy - ly) > self.MANUAL_OVERRIDE_PX:
-                # gerçek imleç son komuttan uzakta: kullanıcı fareyi elle
-                # hareket ettirmiş — göz kontrolünü kısa süre duraklat
-                self._manual_override_until = now + self.MANUAL_OVERRIDE_COOLDOWN_S
-                self._last_cmd_pos = None
-                return
-
         self.control.move_to(*target)
         self._last_cmd_pos = target
 
@@ -601,8 +577,6 @@ class AppController(QObject):
         self.stop_all()
         if self._panic_listener:
             self._panic_listener.stop()
-        if self._real_mouse:
-            self._real_mouse.stop()
         self.control.close()
         for t in list(self._gem_tasks):
             t.wait(500)
