@@ -57,30 +57,43 @@ class _GestureSlot:
     # wink_*/brow: giriş-çıkış eşikleri uyarlanabilir taban kullanır
     # (WINK_DELTA_*/BROW_DELTA_*) — buradaki None yalnız yer tutucudur,
     # tutma süresi (üçüncü değer) yine buradan okunur.
+    # NOT — tutma süreleri neden jeste göre çok farklı:
+    # long_blink'te tutma süresi ASIL güvenlik katmanıdır, çünkü istemsiz
+    # göz kırpma da aynı sinyali üretir; ayırt eden tek şey süredir (doğal
+    # kırpma ~0.1 sn). wink_*'te ise güvenliği SİNYALİN KENDİSİ sağlar:
+    # istemsiz kırpma simetriktir, sol-sağ farkı ~0 kalır (bkz. _signal).
+    # Bu yüzden wink'te uzun tutma istemek güvenlik katmaz, yalnız
+    # kullanılabilirliği bozar — kısa ve çok-kareli doğrulama yeterlidir.
     PARAMS = {
         "long_blink": (0.55, 0.45, 0.40),
-        "wink_left": (None, None, 0.30),
-        "wink_right": (None, None, 0.30),
-        "brow": (None, None, 0.22),      # uyarlanabilir taban kullanır
+        "wink_left": (None, None, 0.12),
+        "wink_right": (None, None, 0.12),
+        "brow": (None, None, 0.18),      # uyarlanabilir taban kullanır
         "mouth": (0.50, 0.35, 0.25),
         "smile": (0.50, 0.35, 0.28),
     }
-    BROW_DELTA_IN = 0.28
-    BROW_DELTA_OUT = 0.15
-    BROW_DELTA_FREEZE = 0.12
+    BROW_DELTA_IN = 0.24
+    BROW_DELTA_OUT = 0.12
+    BROW_DELTA_FREEZE = 0.10
     # wink_*: sol-sağ göz kapama FARKI kişiden kişiye dinlenme halinde bile
     # sıfır değildir (kamera açısı, yüz asimetrisi) — bu yüzden brow gibi
     # UYARLANABİLİR TABAN kullanılır; taban çıkarılmadan sabit bir eşik
     # kullanmak imleci kalıcı dondurabilirdi (kişinin doğal asimetrisi eşiği
     # sürekli aşar).
-    WINK_DELTA_IN = 0.30
-    WINK_DELTA_OUT = 0.17
-    WINK_DELTA_FREEZE = 0.13
+    WINK_DELTA_IN = 0.22
+    WINK_DELTA_OUT = 0.11
+    WINK_DELTA_FREEZE = 0.09
     # Taban, TEK gürültülü kareden değil ilk birkaç karenin MEDYANINDAN
     # kurulur (bkz. _adaptive) — kamera açısı/ışık yüzünden o an rastgele
     # yüksek gelen bir kare tabanı yanlış yere çivilememesi için.
     BASELINE_FRAMES = 8
-    REFRACTORY = 1.0         # iki tıklama arası en az süre
+    # Taban yalnız GERÇEKTEN sakin karelerde uyum sağlar. Eskiden çıkış
+    # eşiğine (0.17) kadar uyum sürüyordu; jest yükselirken taban da onu
+    # kovalayıp sinyali yiyor, jest eşiğe hiç ulaşamıyordu.
+    BASELINE_QUIET_BAND = 0.05
+    # Başarısız bir denemeden sonra kullanıcı hemen yeniden dener; uzun bir
+    # bekleme bu denemeyi sessizce yutup "algılamadı" hissi veriyordu.
+    REFRACTORY = 0.55        # iki tıklama arası en az süre
     # Erken dondurma: jest sinyali yükselmeye BAŞLAR başlamaz imleç sabitlenir
     # (jest mimiği yüzü oynatır; imlecin hedeften kaymaması için)
     FREEZE_THR = {"long_blink": 0.30, "mouth": 0.28, "smile": 0.28}
@@ -89,14 +102,28 @@ class _GestureSlot:
 
     def __init__(self, gesture: str = "off"):
         self.gesture = gesture if gesture in GESTURES else "off"
+        self.sensitivity = 55        # 0-100; yüksek = daha kolay tetiklenir
         self._active_t: float | None = None
         self._fired = False
         self._last_click = -10.0
         self._base: float | None = None
         self._base_collect: list[float] = []
 
+    @property
+    def _scale(self) -> float:
+        """Hassasiyet ölçeği: yüksek hassasiyet → düşük eşik, kısa tutma.
+
+        Kamera açısı, ışık ve yüz yapısı kişiden kişiye çok değişir; tek bir
+        sabit eşik herkese uymuyor (biri hiç tetikleyemezken başkası yanlış
+        tetikliyor). 0.60..1.60 aralığı, ölçülen uçları kapsar.
+        """
+        return 1.60 - max(0, min(100, self.sensitivity)) / 100.0
+
     def set_gesture(self, gesture: str):
-        if gesture in GESTURES:
+        # Aynı jest yeniden atanırsa DOKUNMA: apply_config her ayar
+        # değişikliğinde tüm yuvalara set_gesture çağırır; koşulsuz sıfırlama
+        # öğrenilmiş tabanı siler ve jest ~0.4 sn boyunca ölü kalırdı.
+        if gesture in GESTURES and gesture != self.gesture:
             self.gesture = gesture
             self._active_t = None
             self._fired = False
@@ -107,10 +134,13 @@ class _GestureSlot:
         """Kişiye uyarlanabilir taban çizgisi (brow ve wink_* ortak mantığı).
 
         Taban, ilk BASELINE_FRAMES karenin MEDYANIYLA kurulur (tek kareye
-        değil) — toplama sırasında jest algılanmaz (~0.3-0.4 sn, fark
-        edilmez). Sonra yalnız DİNLENME halindeyken (raw, taban+çıkış
-        eşiğinin altındayken) yavaşça uyum sağlar; jest sırasında donuk
-        kalır ki sinyali kendi kendine "yakalayıp" eritmesin.
+        değil) — toplama sırasında jest algılanmaz (~0.4 sn, fark edilmez).
+
+        Sonrasında taban YALNIZ gerçekten sakin karelerde (raw, taban +
+        BASELINE_QUIET_BAND altındayken) ve jest ETKİN DEĞİLKEN uyum sağlar.
+        Bu iki koşul şart: aksi halde jest yükselirken taban da onu kovalar,
+        v = raw - taban hiç büyümez ve jest eşiğe ulaşamaz (kullanıcının
+        "4-5 kez denemek zorunda kaldım" dediği asıl neden buydu).
         """
         if self._base is None:
             self._base_collect.append(raw)
@@ -119,7 +149,7 @@ class _GestureSlot:
             s = sorted(self._base_collect)
             self._base = s[len(s) // 2]
             self._base_collect = []
-        elif raw < self._base + delta_out:
+        elif self._active_t is None and raw < self._base + self.BASELINE_QUIET_BAND:
             self._base = 0.97 * self._base + 0.03 * raw
         v = max(0.0, raw - self._base)
         return v, delta_in, delta_out
@@ -162,18 +192,21 @@ class _GestureSlot:
             return False, False
 
         v, thr_in, thr_out = self._signal(scores)
+        k = self._scale
+        thr_in *= k
+        thr_out *= k
         if self.gesture in self.FREEZE_DELTA:
             # v zaten taban çıkarılmış (bkz. _adaptive) — doğrudan karşılaştır
-            freeze = v > self.FREEZE_DELTA[self.gesture]
+            freeze = v > self.FREEZE_DELTA[self.gesture] * k
         else:
-            freeze = v > self.FREEZE_THR.get(self.gesture, 0.30)
+            freeze = v > self.FREEZE_THR.get(self.gesture, 0.30) * k
 
         if self._active_t is None:
             if v >= thr_in and (t - self._last_click) >= self.REFRACTORY:
                 self._active_t = t
                 self._fired = False
         else:
-            hold = self.PARAMS[self.gesture][2]
+            hold = self.PARAMS[self.gesture][2] * k
             if v < thr_out:
                 self._active_t = None
                 self._fired = False
@@ -203,6 +236,10 @@ class GestureClick:
         for action, gesture in bindings.items():
             if action in self._slots:
                 self._slots[action].set_gesture(gesture)
+
+    def set_sensitivity(self, sensitivity: int):
+        for slot in self._slots.values():
+            slot.sensitivity = sensitivity
 
     def update(self, scores: dict, t: float) -> tuple[list[str], bool]:
         """Döndürür: (bu karede tetiklenen eylemler, imleci dondur mu)."""

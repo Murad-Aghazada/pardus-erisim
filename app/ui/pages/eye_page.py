@@ -107,6 +107,7 @@ class EyePage(Page):
 
         self.sens = _slider(10, 100, cfg.sensitivity)
         self.smooth = _slider(0, 100, cfg.smoothing)
+        self.gsens = _slider(10, 100, cfg.gesture_sensitivity)
         self.dwell = _slider(400, 2000, cfg.dwell_ms)
         self.dwell_sw = ToggleSwitch(); self.dwell_sw.setChecked(cfg.dwell_enabled)
         self.dot_sw = ToggleSwitch(); self.dot_sw.setChecked(cfg.show_gaze_dot)
@@ -136,6 +137,11 @@ class EyePage(Page):
                      "Tıklamadan önce beklenen süre (milisaniye)", self.dwell)
         settings.add(self.dwell_row)
         settings.add(Divider())
+        settings.add(SettingRow("Jest hassasiyeti",
+                     "Jestler zor algılanıyorsa (birkaç kez denemek "
+                     "gerekiyorsa) yükselt; yanlışlıkla tıklıyorsa düşür",
+                     self.gsens))
+        settings.add(Divider())
         settings.add(SettingRow("Sol tık jesti",
                      "Varsayılan: iki gözü ~yarım saniye kapalı tut. "
                      "İmleç, jestin başladığı yerde sabitlenir",
@@ -157,6 +163,7 @@ class EyePage(Page):
         # Bağlantılar
         self.sens.valueChanged.connect(lambda v: self._set("sensitivity", v))
         self.smooth.valueChanged.connect(lambda v: self._set("smoothing", v))
+        self.gsens.valueChanged.connect(lambda v: self._set("gesture_sensitivity", v))
         self.dwell.valueChanged.connect(lambda v: self._set("dwell_ms", v))
         self.dwell_sw.toggled.connect(lambda v: self._set("dwell_enabled", v))
         for action, box in self.gesture_boxes.items():

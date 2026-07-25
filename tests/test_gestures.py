@@ -158,6 +158,58 @@ def main():
     _, f = feed(gs, seq)
     checks.append(("doğal dinlenme asimetrisi imleci dondurmaz", f == 0, f"donma={f} kare"))
 
+    # ---- Wink tepkiselliği: doğal süreli (kısa) bir wink tıklamalı ----
+    # Eskiden 0.30 sn tutma isteniyordu; gerçek winkler 0.15-0.25 sn sürdüğü
+    # için kullanıcı bir düğmeye basmak için 4-5 kez denemek zorunda kalıyordu.
+    CALM = [{"blink_left": 0.16, "blink_right": 0.10}] * 20   # taban asimetrisi 0.06
+
+    def wink_seq(frames):
+        return (CALM + [{"blink_left": 0.91, "blink_right": 0.12}] * frames
+                + [{"blink_left": 0.16, "blink_right": 0.10}] * 10)
+
+    gs = _GestureSlot("wink_left")
+    c, _ = feed(gs, wink_seq(4))         # 0.19 sn — rampasız, en zor durum
+    checks.append(("kısa kasıtlı wink (0.19 sn) tıklar", c == 1, f"tık={c}"))
+
+    gs = _GestureSlot("wink_left")
+    c, _ = feed(gs, wink_seq(2))         # 0.10 sn — fazla kısa, gürültü olabilir
+    checks.append(("çok kısa titreşim (0.10 sn) tıklamaz", c == 0, f"tık={c}"))
+
+    # Üç kasıtlı wink arka arkaya: bekleme süresi denemeleri yutmamalı
+    gs = _GestureSlot("wink_left")
+    seq = list(CALM)
+    for _ in range(3):
+        seq += [{"blink_left": 0.91, "blink_right": 0.12}] * 5
+        seq += [{"blink_left": 0.16, "blink_right": 0.10}] * 13
+    c, _ = feed(gs, seq)
+    checks.append(("arka arkaya 3 wink = 3 tıklama", c == 3, f"tık={c}"))
+
+    # GÜVENLİK: doğal kırpmada bir göz diğerinden önce kapanabilir; bu geçici
+    # asimetri tıklama üretmemeli (wink'in tek güvenlik katmanı asimetridir)
+    gs = _GestureSlot("wink_left")
+    seq = (CALM
+           + [{"blink_left": 0.80, "blink_right": 0.15},
+              {"blink_left": 0.90, "blink_right": 0.30},
+              {"blink_left": 0.92, "blink_right": 0.55}]
+           + [{"blink_left": 0.92, "blink_right": 0.90}] * 6
+           + [{"blink_left": 0.16, "blink_right": 0.10}] * 10)
+    c, _ = feed(gs, seq)
+    checks.append(("bir göz önde kapanan doğal kırpma tıklamaz", c == 0, f"tık={c}"))
+
+    # GÜVENLİK: en yüksek hassasiyette bile simetrik kırpma tıklamamalı
+    gs = _GestureSlot("wink_left"); gs.sensitivity = 100
+    c, _ = feed(gs, CALM + [{"blink_left": 0.88, "blink_right": 0.85}] * 10
+                + [{"blink_left": 0.16, "blink_right": 0.10}] * 10)
+    checks.append(("azami hassasiyette simetrik kırpma tıklamaz", c == 0, f"tık={c}"))
+
+    # Hassasiyet gerçekten etkili mi: düşük hassasiyet kısa wink'i reddeder
+    gs = _GestureSlot("wink_left"); gs.sensitivity = 10
+    lo_c, _ = feed(gs, wink_seq(4))
+    gs = _GestureSlot("wink_left"); gs.sensitivity = 100
+    hi_c, _ = feed(gs, wink_seq(4))
+    checks.append(("hassasiyet kaydırıcısı etkili (düşük=0, yüksek=1)",
+                   lo_c == 0 and hi_c == 1, f"düşük={lo_c} yüksek={hi_c}"))
+
     # ---- Çok yuvalı: bağımsız eylemler, çakışma yok ----
     # sol=long_blink (iki göz), sağ=wink_right (yalnız sağ göz)
     gc = GestureClick({"left": "long_blink", "right": "wink_right", "middle": "off"})

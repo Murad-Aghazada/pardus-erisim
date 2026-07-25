@@ -19,6 +19,7 @@ class EyeConfig:
     dwell_enabled: bool = True
     # jest tıklaması, üç bağımsız yuva: long_blink|wink_left|wink_right|brow|mouth|smile|off
     # (aynı jest iki yuvaya birden atanamaz — bkz. eye_page.py)
+    gesture_sensitivity: int = 55   # 0-100, jest tetikleme kolaylığı
     left_click_gesture: str = "long_blink"
     right_click_gesture: str = "off"   # isteğe bağlı: Ayarlar'dan wink_right seçilebilir
     middle_click_gesture: str = "off"

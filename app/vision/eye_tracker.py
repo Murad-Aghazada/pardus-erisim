@@ -75,6 +75,7 @@ class EyeTracker(QThread):
             "right": cfg.right_click_gesture,
             "middle": cfg.middle_click_gesture,
         })
+        self.gesture.set_sensitivity(cfg.gesture_sensitivity)
 
     def recenter(self):
         """Kafa nötrünü şu anki duruştan yeniden topla (~1 sn)."""
