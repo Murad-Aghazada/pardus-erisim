@@ -277,10 +277,18 @@ def main():
     # imleç düğmeye doğru ilerliyor: t=100.0'dan itibaren 20 örnek
     for i in range(20):
         tr._history.append((100.0 + i * 0.05, 100 + i * 10, 200))
-    # jest t=101.0'da başladı → kilit, REWIND_S (0.35 sn) öncesinin konumu
+    # jest t=101.0'da başladı → kilit, REWIND_S kadar öncesinin konumu.
+    # Beklenen değer sabitten TÜRETİLİR: REWIND_S ayarlanınca test yanlış
+    # yere çakılı kalmasın (örnekler 0.05 sn aralıklı, x = 100 + 10*i).
+    idx = int((101.0 - tr.REWIND_S - 100.0) / 0.05)
     pos = tr._pos_before(101.0 - tr.REWIND_S)
     checks.append(("tıklama jest öncesi konuma kilitlenir",
-                   pos == (230, 200), f"pos={pos}"))
+                   pos == (100 + 10 * idx, 200), f"pos={pos} beklenen_i={idx}"))
+    # Geri sarma, nişan alma süresini yutmayacak kadar KISA olmalı: aksi
+    # halde kullanıcı düğmeye nişan alıp hemen jest yaptığında tıklama
+    # nişan almadan önceki konuma düşer (canlı yaşanan hata).
+    checks.append(("geri sarma tamponu kısa (<=0.20 sn)",
+                   tr.REWIND_S <= 0.20, f"REWIND_S={tr.REWIND_S}"))
     pos2 = tr._pos_before(99.0)     # tampondan eski istek → en eski konum
     checks.append(("tampon öncesi istek ilk konuma düşer",
                    pos2 == (100, 200), f"pos={pos2}"))

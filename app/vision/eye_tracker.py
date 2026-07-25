@@ -27,7 +27,14 @@ class EyeTracker(QThread):
     capability = Signal(bool)
     fps_report = Signal(float)
 
-    REWIND_S = 0.35   # jest başlarken imlecin bu kadar öncesine kilitlen
+    # Jest başlarken imlecin bu kadar öncesine kilitlen. KÜÇÜK olmalı:
+    # kafa pozu mimiklerden ETKİLENMEYEN yanak çerçevesinden ölçüldüğü için
+    # (bkz. landmark_engine._pose_geometric) göz kapamak imleci zaten
+    # kıpırdatmaz — bu tampon yalnız landmark gürültüsüne karşı küçük bir
+    # paydır. Büyük bir değer, kullanıcı düğmeye nişan alıp hemen jest
+    # yaptığında NİŞAN ALMADAN ÖNCEKİ konuma tıklar (0.35 sn buydu: jest
+    # algılanıyor, halka görünüyor, ama tıklama boş alana düşüyordu).
+    REWIND_S = 0.12
 
     def __init__(self, screen_w: int, screen_h: int, parent=None):
         super().__init__(parent)
