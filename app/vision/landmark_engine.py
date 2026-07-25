@@ -67,7 +67,7 @@ class FrameResult:
         self.pose = pose                  # (yaw, pitch) matris/geo — göz kalibrasyon özelliği
         self.head = head                  # (yaw, pitch) HER ZAMAN geometrik — kafa işaretçisi
         self.blink_score = blink_score    # 0..1 (1 = kapalı) ya da None
-        self.gestures = gestures or {}    # {"blink","jaw","brow","smile"} skorları
+        self.gestures = gestures or {}    # {"blink","blink_left","blink_right","jaw","brow","smile"} skorları
 
 
 class LandmarkEngine:
@@ -200,6 +200,17 @@ class LandmarkEngine:
         blink = avg("eyeBlinkLeft", "eyeBlinkRight")
         if blink is not None:
             out["blink"] = blink
+        # Tek göz kırpma (wink) için ayrı sol/sağ skorlar.
+        # ÖNEMLİ — AYNA TAKASI: eye_tracker.py kareyi MediaPipe'a vermeden
+        # önce aynalar (cv2.flip). MediaPipe blendshape'i gördüğü yüze göre
+        # adlandırdığından "eyeBlinkLeft" aynalanmış yüzün solu, yani
+        # KULLANICININ SAĞ gözüdür. Burada takas edilir ki blink_left
+        # gerçekten kullanıcının SOL gözü olsun (aksi halde sol göz kırpma
+        # sağ tıkı, sağ göz kırpma sol tıkı tetikler).
+        if "eyeBlinkRight" in raw:
+            out["blink_left"] = raw["eyeBlinkRight"]
+        if "eyeBlinkLeft" in raw:
+            out["blink_right"] = raw["eyeBlinkLeft"]
         if "jawOpen" in raw:
             out["jaw"] = raw["jawOpen"]
         brow = raw.get("browInnerUp")

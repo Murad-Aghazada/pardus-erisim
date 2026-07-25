@@ -140,11 +140,37 @@ class SettingsPage(Page):
 
     def _sync(self):
         c = self.state.capabilities
-        self.row_vision.set(c.get("vision"), "Hazır", "Eksik",
-                            "MediaPipe/OpenCV bulunamadı. Kur: pip install mediapipe opencv-python")
-        self.row_voice.set(c.get("voice"), "Hazır", "Eksik",
-                           "Vosk bulunamadı. Kur: pip install vosk sounddevice, sonra Türkçe modeli indir")
-        self.row_control.set(c.get("control"), "Hazır", "Eksik",
-                             "pynput bulunamadı. Kur: pip install pynput")
+        self.row_vision.set(c.get("vision"), "Hazır", "Kurulu değil",
+                            "Kafa/göz ile fare kontrolü bu bileşenler olmadan "
+                            "açılmaz. Kur: pip install mediapipe opencv-python")
+        self.row_voice.set(c.get("voice"), "Hazır", "Kurulu değil",
+                           "Sesli komutlar bu bileşenler olmadan çalışmaz. "
+                           "Kur (önerilen, yüksek doğruluk): "
+                           "pip install faster-whisper sounddevice — ya da "
+                           "hafif yedek: pip install vosk sounddevice")
+        control = self.bridge.control
+        if c.get("control") and getattr(control, "wayland_limited", False):
+            if getattr(control, "using_uinput", False):
+                self.row_control.pill.set_status("Hazır (Wayland: sanal fare)", "live")
+                self.row_control.hint.setText(
+                    "Bu oturum Wayland; normalde imleç kontrolü çalışmaz ama "
+                    "sanal fare (uinput) izni kurulu olduğu için fare/tıklama "
+                    "burada da çalışıyor. Bir şey yapmana gerek yok.")
+            else:
+                self.row_control.pill.set_status("Kısıtlı (Wayland)", "warn")
+                self.row_control.hint.setText(
+                    "Bu oturum Wayland; güvenlik gereği fare imleci başka "
+                    "pencerelerde sürülemez/tıklanamaz ve gerçek farenle "
+                    "çakışabilir. Düzeltmek için sanal fare izni gerekir "
+                    "(oturum türünü değiştirmen GEREKMEZ) — adım adım rehber: "
+                    "Yardım sayfası → “Fare/imleç çalışmıyor?” bölümü.")
+        else:
+            self.row_control.set(c.get("control"), "Hazır", "Kurulu değil",
+                                 "İmleç ve klavye kontrolü bu bileşen olmadan "
+                                 "çalışmaz. Kur: pip install pynput")
         self.row_assist.set(c.get("assist"), "Hazır", "Anahtar yok",
-                            "Aşağıya Gemini API anahtarını girip kaydet.")
+                            "Asistan sohbeti ve listede olmayan doğal sesli "
+                            "isteklerin akıllı çözümü için Gemini API anahtarı "
+                            "gerekir. Aşağıya yapıştırıp Kaydet'e bas — kalan "
+                            "her şey (kafa/göz, temel sesli komutlar) anahtarsız "
+                            "da çalışır.")

@@ -17,8 +17,12 @@ class EyeConfig:
     smoothing: int = 60          # 0-100, titreme bastırma
     dwell_ms: int = 900          # bekleyerek tıklama süresi
     dwell_enabled: bool = True
-    click_gesture: str = "long_blink"  # jest tıklaması: long_blink|brow|mouth|smile|off
-    show_gaze_dot: bool = True   # ekranda işaretçi noktası
+    # jest tıklaması, üç bağımsız yuva: long_blink|wink_left|wink_right|brow|mouth|smile|off
+    # (aynı jest iki yuvaya birden atanamaz — bkz. eye_page.py)
+    left_click_gesture: str = "long_blink"
+    right_click_gesture: str = "off"   # isteğe bağlı: Ayarlar'dan wink_right seçilebilir
+    middle_click_gesture: str = "off"
+    show_gaze_dot: bool = False  # ekranda işaretçi noktası (gerçek imleç zaten görünür)
     magnet_enabled: bool = True  # köşe mıknatısı (kapat düğmesi vb.)
     auto_read: bool = False      # otomatik sesli okuma
 

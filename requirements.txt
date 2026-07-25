@@ -10,6 +10,12 @@ mediapipe>=0.10
 # Sistem denetimi (imleç, klavye, uygulama başlatma)
 pynput>=1.7
 
+# Wayland'da imleç/tıklama için çekirdek seviyesi sanal fare (/dev/uinput).
+# pynput'un zaten dolaylı bağımlılığı (Linux'ta); doğrudan kullandığımız
+# için burada da açıkça listelenir. Kurulum: sh install-pardus.sh
+# (izin/udev kurulumunu da yapar).
+evdev>=1.6; sys_platform == "linux"
+
 # Türkçe sesli komut — yüksek doğruluk (çevrimdışı, önerilen)
 faster-whisper>=1.0
 sounddevice>=0.4.6

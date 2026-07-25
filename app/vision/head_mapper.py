@@ -12,6 +12,8 @@ Kalibrasyon YOKTUR: başlangıçta ~1 saniyelik medyan nötr kabul edilir;
 
 from __future__ import annotations
 
+import math
+
 
 class HeadMapper:
     # Konforlu kafa hareketi aralığı (geometrik poz birimi: burun ucunun
@@ -19,6 +21,21 @@ class HeadMapper:
     YAW_HALF = 0.16
     PITCH_HALF = 0.12
     NEUTRAL_FRAMES = 25
+    # Merkeze yakın istemsiz titremeyi yok sayan ölü bölge (nominal -1..1
+    # oranının payı). Ölü bölgeden SONRASI DOĞRUSALDIR — üstel/güç eğrisi
+    # KULLANILMAZ: böyle bir eğri uçlara yaklaşırken kazancı ARTIRIR, bu da
+    # imlecin köşeye "ışınlanmasına" (ani sıçrama) yol açar. Ölü bölge +
+    # yeniden ölçekleme, aynı hassasiyeti tüm menzilde korurken yalnız
+    # merkezdeki küçük titremeyi keser.
+    DEAD_ZONE = 0.10
+
+    @classmethod
+    def _shape(cls, v: float) -> float:
+        av = abs(v)
+        if av <= cls.DEAD_ZONE:
+            return 0.0
+        scaled = (av - cls.DEAD_ZONE) / (1.0 - cls.DEAD_ZONE)
+        return math.copysign(min(1.0, scaled), v)
 
     def __init__(self, screen_w: int, screen_h: int):
         self.screen_w = screen_w
@@ -63,6 +80,9 @@ class HeadMapper:
 
         dx = (yaw - self._neutral[0]) / half_y     # -1..1 nominal
         dy = (pitch - self._neutral[1]) / half_p
+
+        dx = self._shape(dx)
+        dy = self._shape(dy)
 
         x = (0.5 + dx * 0.5) * self.screen_w
         y = (0.5 + dy * 0.5) * self.screen_h

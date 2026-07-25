@@ -8,9 +8,16 @@ dışı kalır; uygulama etkilenmez.
 
 from __future__ import annotations
 
+from PySide6.QtCore import QObject, Signal
 
-class Speaker:
+
+class Speaker(QObject):
+    # True: konuşma başladı (mikrofon susturulmalı) — bkz. AppController,
+    # kendi TTS sesini komut sanıp döngüye girmesin diye.
+    speaking_changed = Signal(bool)
+
     def __init__(self):
+        super().__init__()
         self._tts = None
         self.available = False
         try:
@@ -23,9 +30,24 @@ class Speaker:
                     self._tts.setLocale(loc)
                     break
             self._tts.setRate(0.0)
+            self._tts.stateChanged.connect(self._on_state_changed)
             self.available = True
         except Exception:
             self._tts = None
+
+    @property
+    def is_speaking(self) -> bool:
+        if self._tts is None:
+            return False
+        from PySide6.QtTextToSpeech import QTextToSpeech
+        return self._tts.state() in (QTextToSpeech.State.Speaking,
+                                     QTextToSpeech.State.Synthesizing)
+
+    def _on_state_changed(self, state):
+        from PySide6.QtTextToSpeech import QTextToSpeech
+        speaking = state in (QTextToSpeech.State.Speaking,
+                             QTextToSpeech.State.Synthesizing)
+        self.speaking_changed.emit(speaking)
 
     def say(self, text: str):
         if self._tts is None or not text:

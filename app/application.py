@@ -13,8 +13,10 @@ Ses komut hattı iki katmanlıdır:
 from __future__ import annotations
 
 import importlib.util
+import math
+import time
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 
 from app.state import AppState
@@ -32,6 +34,15 @@ def _have(mod: str) -> bool:
 
 
 class AppController(QObject):
+    # Odaktan bağımsız acil-durdur: pencere odakta olmasa da her zaman çalışır
+    panic_stop = Signal()
+
+    # Elle fare hareketi algılama: göz/kafa imleci gerçek imleçle "boğuşmasın"
+    MANUAL_OVERRIDE_PX = 40        # bu kadar sapma = kullanıcı fareyi elle tuttu
+    # Doğal "konumla, DUR, tıkla" akışı 1-2 sn sürebilir; kısa bir bekleme
+    # süresi tam tıklama anında dolup imleci geri kapabilirdi.
+    MANUAL_OVERRIDE_COOLDOWN_S = 2.5
+
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
@@ -46,13 +57,40 @@ class AppController(QObject):
         self._geo = geo
         # Qt mantıksal piksel kullanır; pynput fiziksel ister (ör. %125 ölçek)
         self._dpr = float(screen.devicePixelRatio() or 1.0)
+        # Birincil ekranın tüm sanal masaüstü içindeki konumu (çoklu monitörde
+        # birincil (0,0)'da olmayabilir) — imleç hedefine bu ofset eklenir.
+        self._origin_x = int(geo.x() * self._dpr)
+        self._origin_y = int(geo.y() * self._dpr)
 
-        self.control = SystemControl()
+        # ÖNEMLİ: uinput sanal farenin mutlak (ABS) konum aralığı TÜM sanal
+        # masaüstünü (çoklu monitörde bile) kapsamalı — Wayland/libinput, ABS
+        # aralığını yalnızca birincil ekranın kendi boyutuna göre değil,
+        # birleşik masaüstünün tamamına göre eşler. Yalnız birincil ekranın
+        # boyutu verilirse (ör. 2560x1440 iken gerçek masaüstü 5120x1600),
+        # imleç orantılı ama YANLIŞ (uzak) bir noktaya gider.
+        vgeo = screen.virtualGeometry()
+        phys_w = int(vgeo.width() * self._dpr)
+        phys_h = int(vgeo.height() * self._dpr)
+        self.control = SystemControl(phys_w, phys_h)
         self.tracker = None
         self.overlay = None
         self.recognizer = None
 
+        # elle fare hareketi algılama durumu (_on_gaze içinde kullanılır)
+        self._last_cmd_pos: tuple[float, float] | None = None
+        self._manual_override_until: float = 0.0
+        self._real_mouse = None
+        if self.control.using_uinput:
+            from app.control.real_mouse_watch import RealMouseWatcher
+            self._real_mouse = RealMouseWatcher()
+            self._real_mouse.start()
+
+        self.panic_stop.connect(self.stop_all)
+        self._panic_listener = None
+        self._start_panic_listener()
+
         self.speaker = Speaker()
+        self.speaker.speaking_changed.connect(self._on_speaking_changed)
         self._cfg = assist_config.load()
         self._chat: list[dict] = []      # asistan sohbet geçmişi
         self._gem_tasks: set = set()     # çalışan Gemini iş parçacıkları
@@ -67,6 +105,7 @@ class AppController(QObject):
         self.reader.set_auto(self.state.eye.auto_read)
         self.reader.read_started.connect(
             lambda t: self.state.log_event.emit("read", t[:80]))
+        self.reader.unavailable.connect(self._on_read_unavailable)
 
         self.router = CommandRouter(self.control, {
             "set_eye": self.toggle_eye,
@@ -81,10 +120,33 @@ class AppController(QObject):
 
         self._probe()
 
+    # ---- Odaktan bağımsız acil-durdur ----
+    def _start_panic_listener(self):
+        """Esc'i pencere odağından BAĞIMSIZ dinler (Qt kısayolu yalnız pencere
+        odaktayken çalışır; imleç göz kontrolüyle boğuşurken odak başka bir
+        pencerede kalabilir — o durumda bile çıkış garanti olsun diye)."""
+        if not _have("pynput"):
+            return
+        try:
+            from pynput import keyboard as pynput_keyboard
+
+            def on_press(key):
+                if key == pynput_keyboard.Key.esc:
+                    self.panic_stop.emit()
+
+            self._panic_listener = pynput_keyboard.Listener(on_press=on_press)
+            self._panic_listener.daemon = True
+            self._panic_listener.start()
+        except Exception:
+            self._panic_listener = None
+
     # ---- Başlangıç yetenek denetimi ----
     def _probe(self):
         self.state.set_capability("vision", _have("mediapipe") and _have("cv2"))
-        self.state.set_capability("voice", _have("vosk") and _have("sounddevice"))
+        # Ses: Whisper YA DA Vosk yeter — yalnız Vosk'a bakmak, Whisper
+        # kuruluyken bile "Eksik" gösterip kullanıcıyı yanlış yönlendirirdi.
+        self.state.set_capability(
+            "voice", _have("sounddevice") and (_have("faster_whisper") or _have("vosk")))
         self.state.set_capability("control", self.control.available)
         from app.assist.gemini_client import has_key
         self.state.set_capability("assist", _have("requests") and has_key())
@@ -127,6 +189,7 @@ class AppController(QObject):
         self.tracker.frame_ready.connect(self._on_frame)
         self.tracker.gaze_screen.connect(self._on_gaze)
         self.tracker.gesture_click.connect(self._on_gesture_click)
+        self.tracker.gesture_scores.connect(self._on_gesture_scores)
         self.tracker.status.connect(self.state.set_eye_status)
         self.tracker.capability.connect(lambda ok: self.state.set_capability("vision", ok))
         self.tracker.status.connect(self._eye_status_side_effects)
@@ -160,31 +223,87 @@ class AppController(QObject):
         self.state.set_eye_active(False)
         self.state.set_eye_status("idle")
         self.state.set_camera_ready(False)
+        self._last_cmd_pos = None
+        self._manual_override_until = 0.0
 
     def _on_frame(self, image):
         if self._eye_page:
             self._eye_page.show_frame(image)
+
+    def _on_gesture_scores(self, scores: dict):
+        if self._eye_page:
+            self._eye_page.show_gesture_scores(scores)
 
     def _on_gaze(self, x: float, y: float):
         # köşe mıknatısı: kapat düğmesi gibi köşe hedeflerine oturt
         x, y = self.magnet.apply(x, y)
         if self.overlay:
             self.overlay.set_gaze(x, y)
-        self.control.move_to(x * self._dpr, y * self._dpr)
 
-    def _on_gesture_click(self, x: float, y: float):
+        now = time.monotonic()
+        if now < self._manual_override_until:
+            return  # kullanıcı fareyi elle tutuyor: kısa süre karışma
+
+        target = (self._origin_x + x * self._dpr, self._origin_y + y * self._dpr)
+        if self._real_mouse is not None:
+            # uinput yolu: gerçek imleç konumu okunamaz (Wayland), bu yüzden
+            # GERÇEK fare aygıtındaki ham hareketi doğrudan izleriz.
+            if self._real_mouse.last_motion_age() < self.MANUAL_OVERRIDE_COOLDOWN_S:
+                self._manual_override_until = now + self.MANUAL_OVERRIDE_COOLDOWN_S
+                return
+        elif self._last_cmd_pos is not None and self.control.available:
+            cx, cy = self.control.position()
+            lx, ly = self._last_cmd_pos
+            if math.hypot(cx - lx, cy - ly) > self.MANUAL_OVERRIDE_PX:
+                # gerçek imleç son komuttan uzakta: kullanıcı fareyi elle
+                # hareket ettirmiş — göz kontrolünü kısa süre duraklat
+                self._manual_override_until = now + self.MANUAL_OVERRIDE_COOLDOWN_S
+                self._last_cmd_pos = None
+                return
+
+        self.control.move_to(*target)
+        self._last_cmd_pos = target
+
+    # uinput (Wayland) yolunda: imleç taşındıktan hemen sonra tıklarsak
+    # compositor "imleç bu pencereye/widget'a girdi" durumunu henüz
+    # işlememiş olabilir — tıklama, imlecin ÖNCEKİ konumundaki eski hover
+    # durumuna düşer (ya da hiçbir yere). Kısa bir kare payı bu yarışı önler.
+    CLICK_SETTLE_MS = 40
+
+    def _on_gesture_click(self, x: float, y: float, action: str = "left"):
         """Jest tıklaması: jest ÖNCESİNDE nişan alınan noktaya tıkla."""
         x, y = self.magnet.apply(x, y)
         if self.overlay:
             self.overlay.set_gaze(x, y)
-        self.control.move_to(x * self._dpr, y * self._dpr)
-        self.control.click("left")
-        if self.overlay:
-            self.overlay.flash()
+        target = (self._origin_x + x * self._dpr, self._origin_y + y * self._dpr)
+        self.control.move_to(*target)
+        self._last_cmd_pos = target
+        if self.control.using_uinput:
+            # Ayak: jest biter bitmez (göz açılır açılmaz) göz izleme hemen
+            # devam eder ve _on_gaze imleci BAŞKA yere taşıyabilir — tam bu
+            # bekleme penceresinde. Tıklama gerçekleşene kadar göz kontrolünün
+            # imleci taşımasını engelle (aynı "elle fare" duraklatma mekanizması).
+            self._manual_override_until = max(
+                self._manual_override_until,
+                time.monotonic() + self.CLICK_SETTLE_MS / 1000.0 + 0.05)
+            QTimer.singleShot(self.CLICK_SETTLE_MS, lambda: self._finish_click(action))
+        else:
+            self._finish_click(action)
 
     def _on_dwell_click(self, x: int, y: int):
-        self.control.move_to(x * self._dpr, y * self._dpr)
-        self.control.click("left")
+        target = (self._origin_x + x * self._dpr, self._origin_y + y * self._dpr)
+        self.control.move_to(*target)
+        self._last_cmd_pos = target
+        if self.control.using_uinput:
+            self._manual_override_until = max(
+                self._manual_override_until,
+                time.monotonic() + self.CLICK_SETTLE_MS / 1000.0 + 0.05)
+            QTimer.singleShot(self.CLICK_SETTLE_MS, lambda: self._finish_click("left"))
+        else:
+            self._finish_click("left")
+
+    def _finish_click(self, action: str):
+        self.control.click(action)
         if self.overlay:
             self.overlay.flash()
 
@@ -213,6 +332,15 @@ class AppController(QObject):
         if self._eye_page:
             self._eye_page._sync()
 
+    def _on_read_unavailable(self, msg: str):
+        """Ekran yakalama engelli: ayarı da kapat, kullanıcıya nedenini söyle."""
+        self.state.eye.auto_read = False
+        self.state.save()
+        self.state.log_event.emit("read", msg)
+        if self._eye_page:
+            self._eye_page.show_read_note(msg)
+            self._eye_page._sync()
+
     def start_calibration(self):
         """Göz modu kalibrasyonu (deneysel; varsayılan kafa modunda gerekmez)."""
         if not self.tracker or self.tracker.mode != "eye":
@@ -229,6 +357,23 @@ class AppController(QObject):
             self.window.pages["dashboard"]._sync()
 
     # ---- Ses sistemi ----
+    # TTS bittikten sonra hoparlörün/odanın son yankısı sönsün diye kısa
+    # bir gecikmeyle mikrofonu aç (aksi halde asistanın son kelimesinin
+    # kuyruğunu duyup yeni bir komut sanabilir).
+    UNMUTE_DELAY_MS = 400
+
+    def _on_speaking_changed(self, speaking: bool):
+        if not self.recognizer:
+            return
+        if speaking:
+            self.recognizer.set_muted(True)
+        else:
+            QTimer.singleShot(self.UNMUTE_DELAY_MS, self._unmute_voice)
+
+    def _unmute_voice(self):
+        if self.recognizer:
+            self.recognizer.set_muted(False)
+
     def toggle_voice(self, on: bool):
         if on:
             self._start_voice()
@@ -253,6 +398,7 @@ class AppController(QObject):
             return
         cls = self._voice_engine_class()
         self.recognizer = cls(self.router)
+        self.recognizer.set_muted(self.speaker.is_speaking)
         if hasattr(self.recognizer, "sensitivity"):
             self.recognizer.sensitivity = self.state.voice.sensitivity
         self.recognizer.require_wake = self.state.voice.require_wake
@@ -453,5 +599,10 @@ class AppController(QObject):
 
     def shutdown(self):
         self.stop_all()
+        if self._panic_listener:
+            self._panic_listener.stop()
+        if self._real_mouse:
+            self._real_mouse.stop()
+        self.control.close()
         for t in list(self._gem_tasks):
             t.wait(500)

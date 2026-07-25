@@ -72,6 +72,13 @@ class EyePage(Page):
         side.addWidget(self.start_btn)
         row.addLayout(side, 2)
         preview.body.addLayout(row)
+
+        self.gesture_readout = QLabel("Jest skorları: — (kafa takibini başlat)")
+        self.gesture_readout.setObjectName("Muted")
+        self.gesture_readout.setStyleSheet("font-family: monospace;")
+        self.gesture_readout.setWordWrap(True)
+        preview.body.addWidget(self.gesture_readout)
+
         self.add(preview)
 
         # --- Otomatik Sesli Okuma ---
@@ -105,14 +112,13 @@ class EyePage(Page):
         self.dot_sw = ToggleSwitch(); self.dot_sw.setChecked(cfg.show_gaze_dot)
         self.magnet_sw = ToggleSwitch(); self.magnet_sw.setChecked(cfg.magnet_enabled)
 
-        from app.vision.gestures import GESTURES, GESTURE_LABELS
-        self.gesture_box = QComboBox()
-        self.gesture_box.setCursor(Qt.PointingHandCursor)
-        self.gesture_box.setMinimumWidth(240)
-        for g in GESTURES:
-            self.gesture_box.addItem(GESTURE_LABELS[g], g)
-        idx = self.gesture_box.findData(cfg.click_gesture)
-        self.gesture_box.setCurrentIndex(idx if idx >= 0 else 0)
+        from app.vision.gestures import GESTURES, GESTURE_LABELS, ACTIONS
+        self.gesture_boxes: dict[str, QComboBox] = {}
+        for action in ACTIONS:
+            box = QComboBox()
+            box.setCursor(Qt.PointingHandCursor)
+            box.setMinimumWidth(220)
+            self.gesture_boxes[action] = box
 
         settings.add(SettingRow("İmleç hassasiyeti",
                      "Az kafa hareketiyle çok yol almak için yükselt", self.sens))
@@ -130,10 +136,19 @@ class EyePage(Page):
                      "Tıklamadan önce beklenen süre (milisaniye)", self.dwell)
         settings.add(self.dwell_row)
         settings.add(Divider())
-        settings.add(SettingRow("Jest ile tıklama",
-                     "Gözlerini yaklaşık yarım saniye kapalı tut: tıklar. "
-                     "İmleç, gözlerin kapanmaya başladığı yerde sabitlenir",
-                     self.gesture_box))
+        settings.add(SettingRow("Sol tık jesti",
+                     "Varsayılan: iki gözü ~yarım saniye kapalı tut. "
+                     "İmleç, jestin başladığı yerde sabitlenir",
+                     self.gesture_boxes["left"]))
+        settings.add(Divider())
+        settings.add(SettingRow("Sağ tık jesti",
+                     "İsteğe bağlı — ör. yalnız SAĞ gözünü kapatma (wink); "
+                     "kapalı olarak başlar",
+                     self.gesture_boxes["right"]))
+        settings.add(Divider())
+        settings.add(SettingRow("Orta tık jesti",
+                     "İsteğe bağlı — bir jest seç ya da kapalı bırak",
+                     self.gesture_boxes["middle"]))
         settings.add(Divider())
         settings.add(SettingRow("Ekranda işaretçi noktası",
                      "İmlecin gideceği yeri gösteren yumuşak nokta", self.dot_sw))
@@ -144,8 +159,10 @@ class EyePage(Page):
         self.smooth.valueChanged.connect(lambda v: self._set("smoothing", v))
         self.dwell.valueChanged.connect(lambda v: self._set("dwell_ms", v))
         self.dwell_sw.toggled.connect(lambda v: self._set("dwell_enabled", v))
-        self.gesture_box.currentIndexChanged.connect(
-            lambda i: self._set("click_gesture", self.gesture_box.itemData(i)))
+        for action, box in self.gesture_boxes.items():
+            box.currentIndexChanged.connect(
+                lambda i, a=action: self._set_gesture(a, self.gesture_boxes[a].itemData(i)))
+        self._refresh_gesture_boxes()
         self.dot_sw.toggled.connect(lambda v: self._set("show_gaze_dot", v))
         self.magnet_sw.toggled.connect(lambda v: self._set("magnet_enabled", v))
         self.read_sw.toggled.connect(self.bridge.set_auto_read)
@@ -167,6 +184,34 @@ class EyePage(Page):
         self.state.save()
         self.bridge.apply_eye_config()
         self._sync()
+
+    def _set_gesture(self, action, gesture):
+        setattr(self.state.eye, f"{action}_click_gesture", gesture)
+        self.state.save()
+        self.bridge.apply_eye_config()
+        self._refresh_gesture_boxes()
+
+    def _refresh_gesture_boxes(self):
+        """Her yuvanın seçeneklerini, DİĞER yuvalarca kullanılan jestler
+        hariç yeniden doldurur — aynı jest iki eyleme birden atanamaz
+        (yalnız 'off' herkeste serbesttir)."""
+        from app.vision.gestures import GESTURES, GESTURE_LABELS
+        cfg = self.state.eye
+        current = {
+            "left": cfg.left_click_gesture,
+            "right": cfg.right_click_gesture,
+            "middle": cfg.middle_click_gesture,
+        }
+        for action, box in self.gesture_boxes.items():
+            used_elsewhere = {g for a, g in current.items() if a != action and g != "off"}
+            box.blockSignals(True)
+            box.clear()
+            for g in GESTURES:
+                if g == "off" or g not in used_elsewhere:
+                    box.addItem(GESTURE_LABELS[g], g)
+            idx = box.findData(current[action])
+            box.setCurrentIndex(idx if idx >= 0 else 0)
+            box.blockSignals(False)
 
     def _sync(self):
         active = self.state.eye_active
@@ -195,3 +240,18 @@ class EyePage(Page):
     # Uygulama, kamera karelerini buraya bağlar
     def show_frame(self, image):
         self.camera.set_frame(image)
+
+    def show_read_note(self, msg: str):
+        """Sesli okuma neden kapandı (ör. Wayland ekran yakalama kısıtı)."""
+        self.read_last.setText(msg)
+        self.read_last.setStyleSheet(f"color: {Palette.warn};")
+
+    def show_gesture_scores(self, scores: dict):
+        """Canlı tanılama: hangi jestin neden tetiklenmediğini görmek için."""
+        def g(key):
+            v = scores.get(key)
+            return f"{v:.2f}" if v is not None else "—"
+        self.gesture_readout.setText(
+            f"Jest skorları — sol göz: {g('blink_left')}  sağ göz: {g('blink_right')}  "
+            f"iki göz: {g('blink')}  kaş: {g('brow')}  ağız: {g('jaw')}  "
+            f"gülümseme: {g('smile')}")

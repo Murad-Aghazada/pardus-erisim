@@ -106,6 +106,14 @@ class WhisperRecognizer(VoiceRecognizer):
                         data = q.get(timeout=0.3)
                     except queue.Empty:
                         continue
+                    if self._muted:
+                        # TTS konuşuyor: bu bloğu at, yarım kalan toplamayı
+                        # iptal et — kendi sesini komut sanıp duymasın
+                        if collecting:
+                            collecting = False
+                            buf = []
+                            speech_blocks = silence_blocks = 0
+                        continue
                     pcm = np.frombuffer(data, dtype=np.int16)
                     rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)) + 1e-6)
 

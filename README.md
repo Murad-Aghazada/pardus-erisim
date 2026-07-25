@@ -16,9 +16,12 @@ Dört katman:
   OYNAMAYAN yanak-çerçevesinden ölçülür — göz kapama/ağız açma imleci
   kıpırdatmaz; (2) jest sinyali yükselmeye başlar başlamaz imleç donar;
   (3) tıklama, jestin başlamasından 0.35 sn ÖNCEKİ nişan noktasına gider
-  (geri sarma tamponu). Alternatif jestler: kaş kaldırma, ağız açma,
-  gülümseme; ayrıca bekleyerek (dwell) tıklama. Her tıklamada ekranda
-  yeşil halka geri bildirimi belirir.
+  (geri sarma tamponu). **Sol/sağ/orta tık bağımsız jestlere atanabilir**
+  (Ayarlar → Kafa ile Kontrol); varsayılan yalnız sol tık = iki gözü
+  kapatmadır, sağ/orta tık isteğe bağlı kapalı başlar — ör. sağ tık için
+  yalnız sağ gözü kırpma (wink) seçilebilir. Aynı jest iki eyleme birden
+  atanamaz, çakışma arayüzde engellenir. Diğer seçenekler: kaş kaldırma, ağız açma,
+  gülümseme; ayrıca bekleyerek (dwell) tıklama.
   **Köşe mıknatısı**: imleç köşeye yaklaşınca hedefe kendiliğinden oturur —
   sağ üst köşeye yönel, kapat düğmesine yerleşir, gözlerini kapat, kapanır.
 - **Ses ile Kontrol** — Türkçe komutlar cihazda, çevrimdışı çözülür.

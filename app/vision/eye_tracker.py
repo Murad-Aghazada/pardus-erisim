@@ -21,7 +21,8 @@ from app.vision.landmark_engine import L_IRIS, R_IRIS, L_CORNERS, R_CORNERS
 class EyeTracker(QThread):
     frame_ready = Signal(object)          # QImage (önizleme)
     gaze_screen = Signal(float, float)    # ekran pikseli (mantıksal)
-    gesture_click = Signal(float, float)  # jest tıklaması: HEDEFLENEN konum
+    gesture_click = Signal(float, float, str)  # jest tıklaması: konum + eylem (left/right/middle)
+    gesture_scores = Signal(dict)         # ham jest skorları (canlı tanılama)
     status = Signal(str)                  # idle|starting|tracking|no_face|error
     capability = Signal(bool)
     fps_report = Signal(float)
@@ -69,7 +70,11 @@ class EyeTracker(QThread):
         self.mapper.sensitivity = cfg.sensitivity
         self.head_mapper.sensitivity = cfg.sensitivity
         self.filter.set_smoothing(cfg.smoothing)
-        self.gesture.set_gesture(cfg.click_gesture)
+        self.gesture.set_bindings({
+            "left": cfg.left_click_gesture,
+            "right": cfg.right_click_gesture,
+            "middle": cfg.middle_click_gesture,
+        })
 
     def recenter(self):
         """Kafa nötrünü şu anki duruştan yeniden topla (~1 sn)."""
@@ -140,7 +145,9 @@ class EyeTracker(QThread):
                     self._sample = (rx, ry, yaw, pitch)
 
                     now = time.monotonic()
-                    click, freeze = self.gesture.update(result.gestures, now)
+                    fired, freeze = self.gesture.update(result.gestures, now)
+                    if frames % 3 == 0:   # canlı tanılama: saniyede ~7 güncelleme yeter
+                        self.gesture_scores.emit(dict(result.gestures))
 
                     pt = None
                     if self.mode == "head":
@@ -162,12 +169,13 @@ class EyeTracker(QThread):
                             self._history.append((now, gx, gy))
                             self.gaze_screen.emit(gx, gy)
 
-                    if click:
+                    if fired:
                         pos = self._latched
                         if pos is None and self._history:
                             pos = (self._history[-1][1], self._history[-1][2])
                         if pos is not None:
-                            self.gesture_click.emit(pos[0], pos[1])
+                            for action in fired:
+                                self.gesture_click.emit(pos[0], pos[1], action)
 
                     if self.emit_preview:
                         self._emit_frame(frame, result.landmarks, cv2)

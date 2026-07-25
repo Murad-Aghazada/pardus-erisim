@@ -5,6 +5,11 @@ Jest: 21 fps'lik sentetik skor dizileriyle davranış kilitlenir — doğal (kı
 göz kırpma ASLA tıklamamalı, ~yarım saniyelik kapama TAM BİR kez tıklamalı,
 imleç gözler kapanırken donmalı, art arda tetikleme engellenmeli.
 
+Çok yuvalı (sol/sağ/orta tık) testleri: aynı anda birden fazla eylem
+bağımsız jestlere bağlanabilir; simetrik (iki göz) bir kırpma tek-göz
+(wink) yuvalarını ASLA tetiklememeli — wink sinyali sol-sağ FARKI olduğu
+için simetrik kapanışta sıfıra yakın kalır.
+
 Plan: Gemini yanıtlarının temizlenmesi — izinsiz adımlar atılır, wait
 sınırlanır, eski tek-adım biçimi desteklenir.
 """
@@ -19,82 +24,173 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DT = 1.0 / 21.0     # kullanıcının kamerasında ölçülen kare aralığı
 
 
-def feed(gc, seq, base=None):
-    """Skor dizisini kare kare ver; (tıklama sayısı, donma karesi sayısı)."""
+def feed(slot, seq, base=None):
+    """Tek yuva (_GestureSlot): (tıklama sayısı, donma karesi sayısı)."""
     clicks = frozen = 0
     t = 100.0
     for v in seq:
         scores = dict(base or {})
         scores.update(v if isinstance(v, dict) else {"blink": v})
-        c, f = gc.update(scores, t)
+        c, f = slot.update(scores, t)
         clicks += c
         frozen += f
         t += DT
     return clicks, frozen
 
 
+def feed_multi(gc, seq):
+    """Çok yuvalı (GestureClick): bu koşu boyunca tetiklenen eylemlerin listesi."""
+    fired_all = []
+    t = 100.0
+    for scores in seq:
+        fired, _ = gc.update(scores, t)
+        fired_all.extend(fired)
+        t += DT
+    return fired_all
+
+
 def main():
-    from app.vision.gestures import GestureClick
+    from app.vision.gestures import _GestureSlot, GestureClick
     from app.assist.gemini_client import parse_plan
 
     checks = []
 
     # --- doğal hızlı kırpma (2 kare kapalı ≈ 95 ms): tıklama YOK ---
-    gc = GestureClick("long_blink")
+    gs = _GestureSlot("long_blink")
     seq = [0.25] * 20 + [0.85, 0.85] + [0.25] * 20
-    c, _ = feed(gc, seq)
+    c, _ = feed(gs, seq)
     checks.append(("doğal kırpma tıklamaz", c == 0, f"tık={c}"))
 
     # --- kullanıcının yüksek taban değeri (0.30) yanlış tetiklemez ---
-    gc = GestureClick("long_blink")
-    c, _ = feed(gc, [0.30, 0.35, 0.42, 0.38, 0.30] * 30)
+    gs = _GestureSlot("long_blink")
+    c, _ = feed(gs, [0.30, 0.35, 0.42, 0.38, 0.30] * 30)
     checks.append(("yüksek açık-göz tabanı güvenli", c == 0, f"tık={c}"))
 
     # --- yarım saniyelik kapama: TAM BİR tıklama + kapanırken donma ---
-    gc = GestureClick("long_blink")
+    gs = _GestureSlot("long_blink")
     seq = [0.25] * 10 + [0.80] * 11 + [0.25] * 10   # 11 kare ≈ 0.52 sn
-    c, f = feed(gc, seq)
+    c, f = feed(gs, seq)
     checks.append(("uzun kapama tam 1 tıklar", c == 1, f"tık={c}"))
     checks.append(("kapalıyken imleç donar", f >= 10, f"donma={f} kare"))
 
     # --- tutmaya devam: yine 1 tıklama (yeniden ateşleme yok) ---
-    gc = GestureClick("long_blink")
-    c, _ = feed(gc, [0.25] * 5 + [0.85] * 40 + [0.25] * 5)
+    gs = _GestureSlot("long_blink")
+    c, _ = feed(gs, [0.25] * 5 + [0.85] * 40 + [0.25] * 5)
     checks.append(("uzun tutma yine 1 tıklar", c == 1, f"tık={c}"))
 
     # --- soğuma: iki hızlı ardışık uzun kapama → 2. de sayılır ama
     #     1 sn içindeki denemeler reddedilir ---
-    gc = GestureClick("long_blink")
+    gs = _GestureSlot("long_blink")
     burst = [0.25] * 3 + [0.80] * 10 + [0.25] * 3
-    c, _ = feed(gc, burst + burst)          # ikinci giriş ~0.9 sn sonra
+    c, _ = feed(gs, burst + burst)          # ikinci giriş ~0.9 sn sonra
     checks.append(("soğuma süresi korur", c == 1, f"tık={c}"))
-    gc = GestureClick("long_blink")
-    c2, _ = feed(gc, burst + [0.25] * 22 + burst)   # araya >1 sn sükunet girince
+    gs = _GestureSlot("long_blink")
+    c2, _ = feed(gs, burst + [0.25] * 22 + burst)   # araya >1 sn sükunet girince
     checks.append(("soğuma sonrası çalışır", c2 == 2, f"tık={c2}"))
 
     # --- titreşen sinyal (eşik çevresinde): tıklama yok ---
-    gc = GestureClick("long_blink")
-    c, _ = feed(gc, [0.55, 0.65, 0.40, 0.62, 0.42, 0.60, 0.41] * 8)
+    gs = _GestureSlot("long_blink")
+    c, _ = feed(gs, [0.55, 0.65, 0.40, 0.62, 0.42, 0.60, 0.41] * 8)
     checks.append(("eşik titremesi tıklamaz", c == 0, f"tık={c}"))
 
     # --- kaş kaldırma: uyarlanabilir taban ---
-    gc = GestureClick("brow")
+    gs = _GestureSlot("brow")
     seq = [{"brow": 0.12}] * 30 + [{"brow": 0.55}] * 7 + [{"brow": 0.12}] * 10
-    c, _ = feed(gc, seq)
+    c, _ = feed(gs, seq)
     checks.append(("kaş kaldırma tıklar", c == 1, f"tık={c}"))
-    gc = GestureClick("brow")
-    c, _ = feed(gc, [{"brow": 0.12 + 0.03 * (i % 3)} for i in range(80)])
+    gs = _GestureSlot("brow")
+    c, _ = feed(gs, [{"brow": 0.12 + 0.03 * (i % 3)} for i in range(80)])
     checks.append(("doğal kaş oynaması tıklamaz", c == 0, f"tık={c}"))
 
     # --- ağız açma ---
-    gc = GestureClick("mouth")
-    c, _ = feed(gc, [{"jaw": 0.05}] * 10 + [{"jaw": 0.7}] * 8 + [{"jaw": 0.05}] * 5)
+    gs = _GestureSlot("mouth")
+    c, _ = feed(gs, [{"jaw": 0.05}] * 10 + [{"jaw": 0.7}] * 8 + [{"jaw": 0.05}] * 5)
     checks.append(("ağız açma tıklar", c == 1, f"tık={c}"))
 
     # --- kapalı: hiçbir şey ---
-    gc = GestureClick("off")
-    c, f = feed(gc, [0.9] * 40)
+    gs = _GestureSlot("off")
+    c, f = feed(gs, [0.9] * 40)
     checks.append(("jest kapalıyken etkisiz", c == 0 and f == 0, ""))
+
+    # ---- AYNA TAKASI: blink_left GERÇEKTEN kullanıcının sol gözü olmalı ----
+    # eye_tracker kareyi aynalar, bu yüzden MediaPipe'ın "eyeBlinkLeft"i
+    # kullanıcının SAĞ gözüdür. Takas bozulursa sol göz kırpma sağ tıkı
+    # tetikler (canlı olarak yaşanan hata) — bu test onu yakalar.
+    from app.vision.landmark_engine import LandmarkEngine
+
+    class _FakeCat:
+        def __init__(self, name, score):
+            self.category_name, self.score = name, score
+
+    class _FakeRes:
+        # kullanıcı SOL gözünü kapatıyor: aynalanmış karede bu
+        # MediaPipe'a "eyeBlinkRight" olarak görünür
+        face_blendshapes = [[_FakeCat("eyeBlinkLeft", 0.10),
+                             _FakeCat("eyeBlinkRight", 0.90)]]
+
+    sc = LandmarkEngine._gesture_scores(_FakeRes())
+    checks.append(("ayna takası: kullanıcının sol gözü blink_left'e düşer",
+                   sc.get("blink_left") == 0.90 and sc.get("blink_right") == 0.10,
+                   f"blink_left={sc.get('blink_left')} blink_right={sc.get('blink_right')}"))
+
+    # ---- Tek göz (wink) — simetrik kırpmayla çakışmaz ----
+    gs = _GestureSlot("wink_right")
+    seq = [{"blink_left": 0.20, "blink_right": 0.20}] * 10 + \
+          [{"blink_left": 0.20, "blink_right": 0.85}] * 11 + \
+          [{"blink_left": 0.20, "blink_right": 0.20}] * 10
+    c, _ = feed(gs, seq)
+    checks.append(("sağ göz kırpma (wink_right) tıklar", c == 1, f"tık={c}"))
+
+    gs = _GestureSlot("wink_right")
+    # her iki göz BİRLİKTE kapanıyor (doğal kırpma) — fark sıfıra yakın kalmalı
+    seq = [{"blink_left": 0.20, "blink_right": 0.20}] * 10 + \
+          [{"blink_left": 0.82, "blink_right": 0.85}] * 11 + \
+          [{"blink_left": 0.20, "blink_right": 0.20}] * 10
+    c, _ = feed(gs, seq)
+    checks.append(("simetrik kırpma wink'i tetiklemez", c == 0, f"tık={c}"))
+
+    # --- REGRESYON: kişinin doğal dinlenme asimetrisi (sağ göz her zaman
+    #     ~0.20 daha yüksek skorlu, hiç kırpmadan) kalıcı donmaya YOL AÇMAMALI
+    #     — taban çıkarılmazsa bu ham fark eşiği sürekli aşar ve imleç
+    #     hiç hareket edemez ("çok laggy, hareket etmiyor" hatası) ---
+    gs = _GestureSlot("wink_right")
+    seq = [{"blink_left": 0.15, "blink_right": 0.35}] * 60   # sabit asimetri, kırpma yok
+    _, f = feed(gs, seq)
+    checks.append(("doğal dinlenme asimetrisi imleci dondurmaz", f == 0, f"donma={f} kare"))
+
+    # ---- Çok yuvalı: bağımsız eylemler, çakışma yok ----
+    # sol=long_blink (iki göz), sağ=wink_right (yalnız sağ göz)
+    gc = GestureClick({"left": "long_blink", "right": "wink_right", "middle": "off"})
+    seq = [{"blink": 0.22, "blink_left": 0.22, "blink_right": 0.22}] * 10 + \
+          [{"blink": 0.80, "blink_left": 0.80, "blink_right": 0.80}] * 11 + \
+          [{"blink": 0.22, "blink_left": 0.22, "blink_right": 0.22}] * 10
+    fired = feed_multi(gc, seq)
+    checks.append(("simetrik kırpma yalnız SOL tıkı tetikler, SAĞ'ı asla",
+                   fired.count("left") == 1 and fired.count("right") == 0,
+                   f"fired={fired}"))
+
+    gc = GestureClick({"left": "long_blink", "right": "wink_right", "middle": "off"})
+    seq = [{"blink": 0.20, "blink_left": 0.20, "blink_right": 0.20}] * 10 + \
+          [{"blink": 0.475, "blink_left": 0.10, "blink_right": 0.85}] * 11 + \
+          [{"blink": 0.20, "blink_left": 0.20, "blink_right": 0.20}] * 10
+    fired = feed_multi(gc, seq)
+    checks.append(("yalnız sağ göz kırpma SAĞ tıkı tetikler, SOL'u asla",
+                   fired.count("right") == 1 and fired.count("left") == 0,
+                   f"fired={fired}"))
+
+    # üç bağımsız yuva üç farklı jestle aynı koşuda ayrı ayrı tetiklenebilir
+    gc = GestureClick({"left": "wink_left", "right": "wink_right", "middle": "brow"})
+    seq = ([{"blink_left": 0.15, "blink_right": 0.15, "brow": 0.10}] * 15
+           + [{"blink_left": 0.85, "blink_right": 0.15, "brow": 0.10}] * 11
+           + [{"blink_left": 0.15, "blink_right": 0.15, "brow": 0.10}] * 22
+           + [{"blink_left": 0.15, "blink_right": 0.85, "brow": 0.10}] * 11
+           + [{"blink_left": 0.15, "blink_right": 0.15, "brow": 0.10}] * 22
+           + [{"blink_left": 0.15, "blink_right": 0.15, "brow": 0.45}] * 6
+           + [{"blink_left": 0.15, "blink_right": 0.15, "brow": 0.10}] * 5)
+    fired = feed_multi(gc, seq)
+    checks.append(("üç bağımsız yuva sırayla ayrı tetiklenir",
+                   fired.count("left") == 1 and fired.count("right") == 1
+                   and fired.count("middle") == 1, f"fired={fired}"))
 
     # ---- Plan çözümleme ----
     p = parse_plan('{"say":"Açıyorum","steps":[{"type":"open_url",'

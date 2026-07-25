@@ -1,7 +1,9 @@
 """
 Görsel dil / tasarım sistemi.
 
-Tek bir yerde tanımlı renk, tipografi, boşluk ve stil kuralları.
+Tek bir yerde tanımlı renk, tipografi, boşluk ve stil kuralları. GNOME/
+libadwaita ile uyumlu (Pardus, Debian, Ubuntu ortak masaüstü) — Cantarell
+yazı tipi, Adwaita mavi vurgu ve GNOME'un düz/az köşeli kart-buton dili.
 Erişilebilirlik önceliği: yüksek kontrast, büyük hedefler, net odak halkaları.
 """
 
@@ -9,50 +11,51 @@ from __future__ import annotations
 
 
 class Palette:
-    """Kağıt & mürekkep — sıcak, editoryal, yüksek kontrastlı açık tema."""
+    """GNOME/Adwaita açık tema — nötr gri zemin + Adwaita mavisi vurgu."""
 
-    # Zemin katmanları
-    paper = "#F3EFE6"          # ana zemin, sıcak kağıt
-    surface = "#FBF9F4"        # kartlar
+    # Zemin katmanları (Adwaita window/card/sidebar tonları)
+    paper = "#FAFAFA"          # ana pencere zemini
+    surface = "#FFFFFF"        # kartlar
     surface_raised = "#FFFFFF"  # öne çıkan yüzeyler
-    sunken = "#ECE7DB"         # gömük alanlar (girişler, yollar)
+    sunken = "#EDEDED"         # gömük alanlar (girişler, yollar)
 
-    # Mürekkep
-    ink = "#1B1A17"            # ana metin
-    ink_soft = "#57534A"       # ikincil metin
-    ink_faint = "#8A8478"      # üçüncül / ipuçları
-    line = "#E2DBCC"           # ince ayraçlar
-    line_strong = "#D2C9B6"
+    # Mürekkep (GNOME window_fg_color kademeleri)
+    ink = "#1A1A1A"            # ana metin
+    ink_soft = "#5E5E5E"       # ikincil metin
+    ink_faint = "#8B8B8B"      # üçüncül / ipuçları
+    line = "#E8E8E8"           # ince ayraçlar (Adwaita hairline)
+    line_strong = "#D6D6D6"
 
-    # Kimlik — Pardus'tan esinli derin teal + sıcak kehribar
-    accent = "#0E6E77"         # ana vurgu (teal)
-    accent_deep = "#0A555C"
-    accent_soft = "#D7E7E8"    # teal zemin dokunuşu
-    ember = "#C4562A"          # sıcak ikincil (aktif / canlı)
-    ember_soft = "#F4DECF"
+    # Kimlik — Adwaita mavisi (GNOME'un standart vurgu rengi)
+    accent = "#3584E4"
+    accent_deep = "#1C71D8"
+    accent_soft = "#E3EDFB"    # mavi zemin dokunuşu
+    ember = "#FF7800"          # Adwaita turuncusu (ikincil vurgu)
+    ember_soft = "#FDE6CE"
 
-    # Durum
-    live = "#1F8A5B"           # etkin / bağlı
-    live_soft = "#D6ECDF"
-    warn = "#B5761A"
-    warn_soft = "#F3E4C8"
-    danger = "#B23B2E"
-    danger_soft = "#F2D9D4"
+    # Durum (Adwaita named colors: yeşil/sarı/kırmızı)
+    live = "#2EC27E"
+    live_soft = "#DEF5E9"
+    warn = "#E5A50A"
+    warn_soft = "#FBEFD2"
+    danger = "#E01B24"
+    danger_soft = "#FBDEDC"
 
     # Odak halkası (klavye + göz için net görünürlük)
-    focus = "#0E6E77"
+    focus = "#3584E4"
 
     # Kamera / görsel katman
-    scan = "#13B3B8"
-    gaze = "#C4562A"
+    scan = "#1C71D8"
+    gaze = "#FF7800"
 
 
 class Type:
-    """Tipografi ölçeği. Başlıklar serif (editoryal), gövde sans."""
+    """Tipografi ölçeği. GNOME'un sistem yazı tipi (Cantarell) öncelikli."""
 
-    serif = '"Georgia", "Cambria", "Noto Serif", serif'
-    sans = '"Segoe UI", "Inter", "Noto Sans", system-ui, sans-serif'
-    mono = '"Cascadia Code", "Consolas", "Noto Sans Mono", monospace'
+    sans = ('"Cantarell", "Inter", "Noto Sans", system-ui, '
+            '"Segoe UI", sans-serif')
+    serif = sans   # GNOME'da editoryal serif başlık yok — sans'a düşer
+    mono = '"Source Code Pro", "Cascadia Code", "Noto Sans Mono", monospace'
 
     # px ölçek — erişilebilirlik için gövde 16'dan başlar
     display = 40
@@ -75,9 +78,10 @@ class Space:
 
 
 class Radius:
-    sm = 8
-    md = 14
-    lg = 20
+    """GNOME/libadwaita düz köşe dili — önceki sürümden daha az yuvarlak."""
+    sm = 6
+    md = 9
+    lg = 12
     pill = 999
 
 
@@ -102,21 +106,19 @@ QWidget#Root {{
 
 /* ---- Kenar çubuğu ---- */
 QWidget#Sidebar {{
-    background: {p.surface};
+    background: {p.sunken};
     border-right: 1px solid {p.line};
 }}
 
 QLabel#Wordmark {{
-    font-family: {t.serif};
     font-size: {t.h2}px;
-    font-weight: 600;
+    font-weight: 700;
     color: {p.ink};
-    letter-spacing: 0.5px;
 }}
 QLabel#WordmarkSub {{
     font-size: {t.micro}px;
     color: {p.ink_faint};
-    letter-spacing: 2px;
+    letter-spacing: 1px;
 }}
 
 QPushButton#NavItem {{
@@ -129,7 +131,7 @@ QPushButton#NavItem {{
     background: transparent;
 }}
 QPushButton#NavItem:hover {{
-    background: {p.sunken};
+    background: rgba(0, 0, 0, 0.05);
     color: {p.ink};
 }}
 QPushButton#NavItem:checked {{
@@ -140,15 +142,13 @@ QPushButton#NavItem:checked {{
 
 /* ---- Başlıklar ---- */
 QLabel#Display {{
-    font-family: {t.serif};
     font-size: {t.display}px;
-    font-weight: 600;
+    font-weight: 700;
     color: {p.ink};
 }}
 QLabel#H1 {{
-    font-family: {t.serif};
     font-size: {t.h1}px;
-    font-weight: 600;
+    font-weight: 700;
     color: {p.ink};
 }}
 QLabel#H2 {{
@@ -174,7 +174,7 @@ QLabel#Kicker {{
     font-size: {t.micro}px;
     font-weight: 700;
     color: {p.accent};
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
 }}
 
 /* ---- Kartlar ---- */
@@ -189,7 +189,7 @@ QFrame#CardRaised {{
     border-radius: {Radius.lg}px;
 }}
 
-/* ---- Butonlar ---- */
+/* ---- Butonlar (GNOME 'suggested-action' / 'flat' / 'destructive-action') ---- */
 QPushButton#Primary {{
     background: {p.accent};
     color: #FFFFFF;
@@ -213,7 +213,7 @@ QPushButton#Ghost {{
     font-size: {t.body}px;
     font-weight: 600;
 }}
-QPushButton#Ghost:hover {{ border-color: {p.accent}; color: {p.accent_deep}; }}
+QPushButton#Ghost:hover {{ background: rgba(0, 0, 0, 0.05); border-color: {p.accent}; color: {p.accent_deep}; }}
 
 QPushButton#Danger {{
     background: transparent;
@@ -233,9 +233,9 @@ QPushButton#QuitBig {{
     border-radius: {Radius.md}px;
     font-size: {t.h2}px;
     font-weight: 700;
-    letter-spacing: 2px;
+    letter-spacing: 1px;
 }}
-QPushButton#QuitBig:hover {{ background: #93261B; }}
+QPushButton#QuitBig:hover {{ background: #A51D2D; }}
 
 /* ---- Girişler ---- */
 QLineEdit, QComboBox, QSpinBox {{
