@@ -97,6 +97,13 @@ class ReadAloud(QObject):
 
     read_started = Signal(str)     # okunan metin (arayüz gösterimi)
     state_changed = Signal(bool)   # otomatik mod açık/kapalı
+    unavailable = Signal(str)      # ekran yakalama bu oturumda mümkün değil
+
+    # Wayland ekran yakalamayı istemcilere kapatır; grabWindow boş döner.
+    # Her 1.3 sn'de bir boşuna denemek ARAYÜZ İŞ PARÇACIĞINI meşgul eder ve
+    # tıklamalar tepkisiz görünür — bu yüzden birkaç başarısızlıktan sonra
+    # otomatik okuma kendini kapatır ve kullanıcıya durumu bildirir.
+    MAX_CAPTURE_FAILS = 3
 
     def __init__(self, speaker, parent=None):
         super().__init__(parent)
@@ -110,6 +117,8 @@ class ReadAloud(QObject):
         self._cooldown = QTimer(self)
         self._cooldown.setSingleShot(True)
         self._task = None
+        self._busy = False
+        self._capture_fails = 0
 
         self._timer = QTimer(self)
         self._timer.setInterval(300)
@@ -132,6 +141,14 @@ class ReadAloud(QObject):
 
     # ---- İç ----
     def _poll(self):
+        # Zamanlayıcı yuvasında sızan bir istisna, saniyede 3 kez yeniden
+        # patlar ve arayüz iş parçacığını boğar — burada yutulur.
+        try:
+            self._poll_once()
+        except Exception:
+            pass
+
+    def _poll_once(self):
         if not self.auto_enabled:
             return
         import time
@@ -155,20 +172,38 @@ class ReadAloud(QObject):
             self._trigger()
 
     def _trigger(self, force: bool = False):
-        if self._task is not None and self._task.isRunning():
+        # _busy bayrağı, self._task.isRunning() yerine kullanılır: iş bitince
+        # C++ nesnesi silinir ve Python başvurusu üzerinden isRunning()
+        # çağırmak "Internal C++ object already deleted" hatası verirdi.
+        if self._busy:
             return
         if not force and self._cooldown.isActive():
             return
         png = self._capture()
         if png is None:
+            self._capture_fails += 1
+            if self._capture_fails >= self.MAX_CAPTURE_FAILS and self.auto_enabled:
+                self.set_auto(False)
+                self.unavailable.emit(
+                    "Ekran yakalama bu oturumda engellendi (Wayland güvenlik "
+                    "kısıtı), bu yüzden Otomatik Sesli Okuma kapatıldı. "
+                    "Xorg oturumunda çalışır — bkz. Yardım sayfası.")
             return
+        self._capture_fails = 0
         self._last_read_pos = QCursor.pos()
-        self._task = OcrTask(png)
-        self._task.done.connect(self._on_text)
-        self._task.failed.connect(lambda _e: None)
-        self._task.finished.connect(self._task.deleteLater)
-        self._task.start()
+        self._busy = True
+        task = OcrTask(png)
+        self._task = task
+        task.done.connect(self._on_text)
+        task.failed.connect(lambda _e: None)
+        task.finished.connect(self._on_task_finished)
+        task.finished.connect(task.deleteLater)
+        task.start()
         self._cooldown.start(COOLDOWN_MS)
+
+    def _on_task_finished(self):
+        self._busy = False
+        self._task = None
 
     def _capture(self) -> bytes | None:
         try:

@@ -32,6 +32,14 @@ class _Step(QHBoxLayout):
         self.addLayout(box, 1)
 
 
+def _note(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setObjectName("Lead")
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet(f"color: {Palette.ink_soft};")
+    return lbl
+
+
 class HelpPage(Page):
     def __init__(self, state, bridge, parent=None):
         super().__init__(parent)
@@ -96,6 +104,44 @@ class HelpPage(Page):
             "Metin yazmak için “yaz” de, ardından cümleni söyle. Örnek: "
             "“yaz merhaba dünya”."))
         self.add(voice)
+
+        # Wayland'da fare/imleç
+        way = Card()
+        wh = QLabel("Fare/imleç çalışmıyor? (Wayland)"); wh.setObjectName("H2")
+        way.body.addWidget(wh)
+        way.body.addSpacing(Space.xs)
+        way.body.addWidget(_note(
+            "Ayarlar'da “Sistem denetimi” satırı “Kısıtlı (Wayland)” "
+            "yazıyorsa oturumun Wayland türünde demektir. Wayland, güvenlik "
+            "nedeniyle uygulamaların ekran genelinde imleç sürmesine/"
+            "tıklamasına izin vermez — bu Pardus Erişim'in hatası değil, "
+            "oturum türünün kısıtıdır. İyi haber: Xorg'a geçmen GEREKMEZ; "
+            "aşağıdaki tek seferlik izni verirsen Wayland'da kalarak da "
+            "fare/tıklama tam çalışır."))
+        way.body.addWidget(Divider())
+        way.body.addLayout(_Step(1, "Kurulum betiğini çalıştır",
+            "Terminalde proje klasöründe: “sh install-pardus.sh”. Bu, "
+            "sanal fare için gereken sistem iznini (udev kuralı + 'input' "
+            "grubu) otomatik ekler; parola isteyebilir."))
+        way.body.addWidget(Divider())
+        way.body.addLayout(_Step(2, "Oturumu kapat, tekrar aç",
+            "Grup üyeliği yalnız YENİ bir girişte etkinleşir — sağ üstten "
+            "çıkış yap ve tekrar giriş yap (ya da yeniden başlat)."))
+        way.body.addWidget(Divider())
+        way.body.addLayout(_Step(3, "Doğrula",
+            "Terminalde “.venv/bin/python main.py --doctor” çalıştır; "
+            "“Sanal fare izni (uinput)” satırı TAMAM diyorsa fare/tıklama "
+            "artık Wayland'da da tam çalışır."))
+        way.body.addWidget(_note(
+            "Elle kurulum ya da install-pardus.sh çalışmazsa: terminalde "
+            "şunu çalıştır — "
+            "sudo usermod -aG input $USER  (ve /etc/udev/rules.d/ altına "
+            "uinput için 'GROUP=\"input\", MODE=\"0660\"' kuralı ekle), "
+            "sonra oturumu kapat/aç. Bu da olmuyorsa alternatif: girişte "
+            "dişli (⚙) simgesinden “…on Xorg” seçip Xorg oturumuyla gir — "
+            "orada fare kontrolü zaten kısıtsız çalışır, sadece her "
+            "girişte tekrar seçmen gerekir."))
+        self.add(way)
 
         # İpuçları
         tips = Card()

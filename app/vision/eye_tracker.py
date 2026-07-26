@@ -21,12 +21,23 @@ from app.vision.landmark_engine import L_IRIS, R_IRIS, L_CORNERS, R_CORNERS
 class EyeTracker(QThread):
     frame_ready = Signal(object)          # QImage (önizleme)
     gaze_screen = Signal(float, float)    # ekran pikseli (mantıksal)
-    gesture_click = Signal(float, float)  # jest tıklaması: HEDEFLENEN konum
+    gesture_click = Signal(float, float, str)  # jest tıklaması: konum + eylem (left/right/middle)
+    gesture_scores = Signal(dict)         # ham jest skorları (canlı tanılama)
     status = Signal(str)                  # idle|starting|tracking|no_face|error
     capability = Signal(bool)
     fps_report = Signal(float)
 
-    REWIND_S = 0.35   # jest başlarken imlecin bu kadar öncesine kilitlen
+    # Jest başlarken imlecin bu kadar öncesine kilitlen. KÜÇÜK olmalı:
+    # kafa pozu mimiklerden ETKİLENMEYEN yanak çerçevesinden ölçüldüğü için
+    # (bkz. landmark_engine._pose_geometric) göz kapamak imleci zaten
+    # kıpırdatmaz — bu tampon yalnız landmark gürültüsüne karşı küçük bir
+    # paydır. Büyük bir değer, kullanıcı düğmeye nişan alıp hemen jest
+    # yaptığında NİŞAN ALMADAN ÖNCEKİ konuma tıklar (0.35 sn buydu: jest
+    # algılanıyor, halka görünüyor, ama tıklama boş alana düşüyordu).
+    REWIND_S = 0.12
+    # Dondurma bu süreden uzun süremez — imlecin kalıcı takılmasına karşı
+    # son savunma (jest eşiğin kıyısında salınıp ne ateşlenip ne düşerse).
+    FREEZE_MAX_S = 1.0
 
     def __init__(self, screen_w: int, screen_h: int, parent=None):
         super().__init__(parent)
@@ -49,6 +60,7 @@ class EyeTracker(QThread):
         from collections import deque
         self._history: deque = deque(maxlen=64)
         self._frozen = False
+        self._froze_at = 0.0
         self._latched: tuple[float, float] | None = None
 
     def _pos_before(self, t: float) -> tuple[float, float] | None:
@@ -69,7 +81,12 @@ class EyeTracker(QThread):
         self.mapper.sensitivity = cfg.sensitivity
         self.head_mapper.sensitivity = cfg.sensitivity
         self.filter.set_smoothing(cfg.smoothing)
-        self.gesture.set_gesture(cfg.click_gesture)
+        self.gesture.set_bindings({
+            "left": cfg.left_click_gesture,
+            "right": cfg.right_click_gesture,
+            "middle": cfg.middle_click_gesture,
+        })
+        self.gesture.set_sensitivity(cfg.gesture_sensitivity)
 
     def recenter(self):
         """Kafa nötrünü şu anki duruştan yeniden topla (~1 sn)."""
@@ -140,7 +157,9 @@ class EyeTracker(QThread):
                     self._sample = (rx, ry, yaw, pitch)
 
                     now = time.monotonic()
-                    click, freeze = self.gesture.update(result.gestures, now)
+                    fired, freeze = self.gesture.update(result.gestures, now)
+                    if frames % 3 == 0:   # canlı tanılama: saniyede ~7 güncelleme yeter
+                        self.gesture_scores.emit(dict(result.gestures))
 
                     pt = None
                     if self.mode == "head":
@@ -151,10 +170,18 @@ class EyeTracker(QThread):
                         pt = self.mapper.map(rx, ry, yaw, pitch)
 
                     if pt is not None:
+                        # Güvenlik ağı: dondurma hiçbir koşulda takılıp
+                        # kalmamalı. Sinyal eşiğin hemen üstünde salınırsa
+                        # jest ne ateşlenir ne düşer; imleç sonsuza dek
+                        # donabilirdi ("takılıyor" hatası).
+                        if freeze and self._frozen and \
+                                (now - self._froze_at) > self.FREEZE_MAX_S:
+                            freeze = False
                         if freeze:
                             if not self._frozen:
                                 # jest başladı: nişan noktası, jest ÖNCESİNİN konumu
                                 self._frozen = True
+                                self._froze_at = now
                                 self._latched = self._pos_before(now - self.REWIND_S)
                         else:
                             self._frozen = False
@@ -162,12 +189,13 @@ class EyeTracker(QThread):
                             self._history.append((now, gx, gy))
                             self.gaze_screen.emit(gx, gy)
 
-                    if click:
+                    if fired:
                         pos = self._latched
                         if pos is None and self._history:
                             pos = (self._history[-1][1], self._history[-1][2])
                         if pos is not None:
-                            self.gesture_click.emit(pos[0], pos[1])
+                            for action in fired:
+                                self.gesture_click.emit(pos[0], pos[1], action)
 
                     if self.emit_preview:
                         self._emit_frame(frame, result.landmarks, cv2)

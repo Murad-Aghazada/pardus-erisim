@@ -97,6 +97,12 @@ class VoiceRecognizer(QThread):
         self.require_wake = False
         self.wake_word = "pardus"
         self._awake = False
+        self._muted = False
+
+    def set_muted(self, muted: bool):
+        """TTS konuşurken mikrofonu yok say — kendi sesini komut sanıp
+        döngüye girmesin (bkz. AppController Speaker.speaking_changed)."""
+        self._muted = bool(muted)
 
     def stop(self):
         self._running = False
@@ -154,6 +160,8 @@ class VoiceRecognizer(QThread):
                         data = q.get(timeout=0.3)
                     except queue.Empty:
                         continue
+                    if self._muted:
+                        continue    # TTS konuşuyor: kendi sesini duymasın
                     if rec_g is not None:
                         rec_g.AcceptWaveform(data)
                     if rec.AcceptWaveform(data):
